@@ -1,0 +1,21 @@
+# ROS2 / colcon build artifacts (never commit these)
+build/
+install/
+log/
+
+# C++ build artifacts
+*.o
+*.so
+*.a
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+
+# OS junk
+.DS_Store
+
+# Python (in case you add scripts later)
+__pycache__/
+*.pyc
