@@ -68,11 +68,11 @@ private:
     config.num_samples = 200;
     config.dt = 0.1;
     config.state_weight = Eigen::Vector3d(10.0, 10.0, 10.0);
-    config.control_weight = Eigen::Vector3d(0.1, 0.1, 0.1);
+    config.control_weight = Eigen::Vector3d(0.3, 0.3, 0.3);
     config.terminal_weight = Eigen::Vector3d(20.0, 20.0, 20.0);
     config.noise_std = Eigen::Vector3d(0.5, 0.5, 0.5);
     config.max_speed = 2.0;
-    config.lambda = 1.0;
+    config.lambda = 3.0;
     return config;
   }
 
