@@ -88,7 +88,7 @@ private:
     config.n_max = 400;
     config.n_default = 200;
     config.target_loop_time = 0.05;   // matches the 20Hz control timer
-    config.deadline_margin = 0.8;     // budget 40ms of the 50ms cycle for MPPI
+    config.deadline_margin = 0.6;     // budget 40ms of the 50ms cycle for MPPI
     config.smoothing_window = 3;
     return config;
   }

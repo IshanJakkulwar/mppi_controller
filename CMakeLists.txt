@@ -14,6 +14,8 @@ find_package(mavros_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(Threads REQUIRED)
+
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -84,12 +86,18 @@ target_include_directories(test_anytime_mppi PUBLIC
   ${EIGEN3_INCLUDE_DIR}
 )
 
+add_executable(cpu_load_generator
+  src/cpu_load_generator.cpp
+)
+target_link_libraries(cpu_load_generator Threads::Threads)
+
 install(TARGETS
   offboard_node
   test_drone_model
   test_mpc_controller
   test_mppi_controller
   test_anytime_mppi
+  cpu_load_generator
   DESTINATION lib/${PROJECT_NAME}
 )
 
