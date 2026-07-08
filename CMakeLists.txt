@@ -29,6 +29,7 @@ endif()
 
 add_executable(offboard_node
   src/offboard_node.cpp
+  src/anytime_scheduler.cpp
   src/mppi_controller.cpp
   src/drone_model.cpp
 )

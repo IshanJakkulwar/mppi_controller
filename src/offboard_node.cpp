@@ -12,12 +12,15 @@
 
 #include "mppi_controller/models/drone_state.hpp"
 #include "mppi_controller/controllers/mppi_controller.hpp"
+#include "mppi_controller/controllers/anytime_scheduler.hpp"
 #include "mppi_controller/utils/math_utils.hpp"
 
 using namespace std::chrono_literals;
 using mppi_controller::DroneState;
 using mppi_controller::MppiController;
 using mppi_controller::MppiConfig;
+using mppi_controller::AnytimeScheduler;
+using mppi_controller::SchedulerConfig;
 
 class OffboardNode : public rclcpp::Node
 {
@@ -25,7 +28,9 @@ public:
   OffboardNode()
   : Node("offboard_node"),
     current_wp_index_(0),
-    mppi_(makeMppiConfig())
+    mppi_(makeMppiConfig()),
+    scheduler_(makeSchedulerConfig()),
+    next_n_(200)
   {
     waypoints_ = {
       {0.0, 0.0, 5.0},
@@ -57,7 +62,7 @@ public:
     timer_ = this->create_wall_timer(
       50ms, std::bind(&OffboardNode::timerCallback, this));
 
-    RCLCPP_INFO(this->get_logger(), "offboard_node (MPPI baseline) started");
+    RCLCPP_INFO(this->get_logger(), "offboard_node (Anytime MPPI) started");
   }
 
 private:
@@ -65,14 +70,26 @@ private:
   {
     MppiConfig config;
     config.horizon = 20;
-    config.num_samples = 200;
+    config.num_samples = 200;  // used only as the very first call's N
     config.dt = 0.1;
     config.state_weight = Eigen::Vector3d(10.0, 10.0, 10.0);
-    config.control_weight = Eigen::Vector3d(0.3, 0.3, 0.3);
+    config.control_weight = Eigen::Vector3d(0.3, 0.3, 0.3);   // tuned
     config.terminal_weight = Eigen::Vector3d(20.0, 20.0, 20.0);
-    config.noise_std = Eigen::Vector3d(0.5, 0.5, 0.5);
+    config.noise_std = Eigen::Vector3d(0.5, 0.5, 0.5);        // tuned
     config.max_speed = 2.0;
-    config.lambda = 3.0;
+    config.lambda = 3.0;                                       // tuned
+    return config;
+  }
+
+  static SchedulerConfig makeSchedulerConfig()
+  {
+    SchedulerConfig config;
+    config.n_min = 20;
+    config.n_max = 400;
+    config.n_default = 200;
+    config.target_loop_time = 0.05;   // matches the 20Hz control timer
+    config.deadline_margin = 0.8;     // budget 40ms of the 50ms cycle for MPPI
+    config.smoothing_window = 3;
     return config;
   }
 
@@ -123,8 +140,10 @@ private:
 
       if (t >= 1.0) {
         taking_off_ = false;
-        mppi_.reset();  // clear MPPI's warm-start sequence before handoff
-        RCLCPP_INFO(this->get_logger(), "Takeoff ramp complete, switching to MPPI waypoint tracking");
+        mppi_.reset();
+        scheduler_.reset();
+        next_n_ = 200;
+        RCLCPP_INFO(this->get_logger(), "Takeoff ramp complete, switching to Anytime MPPI waypoint tracking");
       }
       return target;
     }
@@ -170,27 +189,37 @@ private:
     }
 
     Eigen::Vector3d target = computeTarget();
-
-    // ---- The only line that does "control math" ----
-    auto t0 = std::chrono::steady_clock::now();
     Eigen::Vector3d cmd_vel;
+
     if (taking_off_) {
-      // Simple proportional climb during the ramp -- MPPI is reserved
-      // for actual waypoint tracking, not the vertical takeoff phase.
+      // Simple proportional climb, same as before -- MPPI/scheduler
+      // are reserved for waypoint tracking, not the vertical ramp.
       cmd_vel = Eigen::Vector3d(0.0, 0.0,
         mppi_controller::math_utils::clamp(
           (target.z() - drone_state_.position.z()) * 1.0, -1.0, 1.0));
     } else {
-      cmd_vel = mppi_.computeVelocityCommand(drone_state_, target);
-    }
-    auto t1 = std::chrono::steady_clock::now();
-    double call_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-    // -------------------------------------------------
+      // ---- Compute-aware MPPI call ----
+      int used_n = next_n_;
+      auto t0 = std::chrono::steady_clock::now();
+      cmd_vel = mppi_.computeVelocityCommandWithN(drone_state_, target, used_n);
+      auto t1 = std::chrono::steady_clock::now();
+      double call_duration_sec = std::chrono::duration<double>(t1 - t0).count();
 
-    if (!taking_off_ && call_count_ % 20 == 0) {
-      RCLCPP_INFO(this->get_logger(), "MPPI call took %.2f ms", call_ms);
+      next_n_ = scheduler_.recommendNextSampleCount(call_duration_sec, used_n);
+
+      if (scheduler_.inSafetyFallback()) {
+        RCLCPP_WARN(this->get_logger(),
+          "AnytimeScheduler: two consecutive deadline misses -- consider fallback controller");
+      }
+
+      if (call_count_ % 20 == 0) {
+        RCLCPP_INFO(this->get_logger(),
+          "MPPI N=%d call_time=%.2fms next_N=%d",
+          used_n, call_duration_sec * 1000.0, next_n_);
+      }
+      call_count_++;
+      // ----------------------------------
     }
-    call_count_++;
 
     publishVelocity(cmd_vel);
 
@@ -247,6 +276,8 @@ private:
   double position_tolerance_ = 0.3;
 
   MppiController mppi_;
+  AnytimeScheduler scheduler_;
+  int next_n_;
 
   bool taking_off_ = true;
   Eigen::Vector3d ground_position_{0.0, 0.0, 0.0};
