@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <ctime>
 
 // Standalone CPU load generator. Run this in a separate terminal while
 // offboard_node is flying, to simulate real compute contention (e.g. a
@@ -46,6 +47,8 @@ int main(int argc, char ** argv)
     return 1;
   }
 
+  std::time_t start_time = std::time(nullptr);
+  std::cout << "[" << std::ctime(&start_time);  // ctime() includes a trailing newline
   std::cout << "Starting CPU load: " << num_threads
             << " busy threads for " << duration_sec << " seconds\n";
   std::cout << "(run this alongside offboard_node to test AnytimeScheduler under load)\n";
@@ -68,6 +71,7 @@ int main(int argc, char ** argv)
     t.join();
   }
 
-  std::cout << "CPU load generator finished.\n";
+  std::time_t end_time = std::time(nullptr);
+  std::cout << "CPU load generator finished at " << std::ctime(&end_time);
   return 0;
 }

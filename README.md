@@ -4,7 +4,7 @@ Compute-aware (Anytime) Model Predictive Path Integral control for autonomous UA
 
 ## Status
 
-Actively in development. Current stage: baseline MPPI flying in Gazebo (fixed sample count), with a standalone compute-aware scheduler validated offline. Not yet wired into a live flight.
+Actively in development. Current stage: Beta Compute Aware MPPI flying in Gazebo (fixed vs adaptive sample count), with a compute-aware scheduler partially validated in SITL. Timestamped comparison for both in progress.
 
 ## Architecture
 
@@ -40,6 +40,6 @@ Requires PX4 SITL + Gazebo Harmonic + MAVROS already running.
 - [x] Linear MPC (gradient-descent based; QP solver upgrade pending if used in final results)
 - [x] Baseline MPPI (standalone validated + flown)
 - [x] Compute-aware sample scheduling (standalone validated)
-- [ ] Compute-aware MPPI flown in Gazebo
-- [ ] CPU-load stress testing
+- [X] Compute-aware MPPI flown in Gazebo
+- [X] CPU-load stress testing
 - [ ] Hardware testing (F450 / X500)
