@@ -2,6 +2,7 @@
 #include <memory>
 #include <vector>
 #include <array>
+#include <ctime>
 
 #include "rclcpp/rclcpp.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -32,6 +33,9 @@ public:
     scheduler_(makeSchedulerConfig()),
     next_n_(200)
   {
+    this->declare_parameter<bool>("use_scheduler", true);
+    use_scheduler_ = this->get_parameter("use_scheduler").as_bool();
+
     waypoints_ = {
       {0.0, 0.0, 5.0},
       {2.0, 0.0, 5.0},
@@ -62,7 +66,8 @@ public:
     timer_ = this->create_wall_timer(
       50ms, std::bind(&OffboardNode::timerCallback, this));
 
-    RCLCPP_INFO(this->get_logger(), "offboard_node (Anytime MPPI) started");
+    RCLCPP_INFO(this->get_logger(), "offboard_node started, mode=%s",
+      use_scheduler_ ? "ADAPTIVE (AnytimeScheduler)" : "FIXED (N=400 baseline)");
   }
 
 private:
@@ -88,7 +93,7 @@ private:
     config.n_max = 400;
     config.n_default = 200;
     config.target_loop_time = 0.05;   // matches the 20Hz control timer
-    config.deadline_margin = 0.6;     // budget 40ms of the 50ms cycle for MPPI
+    config.deadline_margin = 0.6;     // budget 30ms of the 50ms cycle for MPPI
     config.smoothing_window = 3;
     return config;
   }
@@ -143,7 +148,10 @@ private:
         mppi_.reset();
         scheduler_.reset();
         next_n_ = 200;
-        RCLCPP_INFO(this->get_logger(), "Takeoff ramp complete, switching to Anytime MPPI waypoint tracking");
+        deadline_miss_count_ = 0;
+        RCLCPP_INFO(this->get_logger(),
+          "Takeoff ramp complete, switching to MPPI waypoint tracking (mode=%s)",
+          use_scheduler_ ? "ADAPTIVE" : "FIXED");
       }
       return target;
     }
@@ -198,27 +206,37 @@ private:
         mppi_controller::math_utils::clamp(
           (target.z() - drone_state_.position.z()) * 1.0, -1.0, 1.0));
     } else {
-      // ---- Compute-aware MPPI call ----
-      int used_n = next_n_;
+      // ---- MPPI call: adaptive N (scheduler) or fixed N (baseline) ----
+      int used_n = use_scheduler_ ? next_n_ : fixed_baseline_n_;
+
       auto t0 = std::chrono::steady_clock::now();
       cmd_vel = mppi_.computeVelocityCommandWithN(drone_state_, target, used_n);
       auto t1 = std::chrono::steady_clock::now();
       double call_duration_sec = std::chrono::duration<double>(t1 - t0).count();
 
-      next_n_ = scheduler_.recommendNextSampleCount(call_duration_sec, used_n);
+      if (use_scheduler_) {
+        next_n_ = scheduler_.recommendNextSampleCount(call_duration_sec, used_n);
+        if (scheduler_.inSafetyFallback()) {
+          RCLCPP_WARN(this->get_logger(),
+            "AnytimeScheduler: two consecutive deadline misses -- consider fallback controller");
+        }
+      }
 
-      if (scheduler_.inSafetyFallback()) {
-        RCLCPP_WARN(this->get_logger(),
-          "AnytimeScheduler: two consecutive deadline misses -- consider fallback controller");
+      bool missed_deadline = call_duration_sec > 0.05;  // matches target_loop_time
+      if (missed_deadline) {
+        deadline_miss_count_++;
       }
 
       if (call_count_ % 20 == 0) {
         RCLCPP_INFO(this->get_logger(),
-          "MPPI N=%d call_time=%.2fms next_N=%d",
-          used_n, call_duration_sec * 1000.0, next_n_);
+          "[%s] N=%d call_time=%.2fms next_N=%d deadline_misses_so_far=%d",
+          use_scheduler_ ? "ADAPTIVE" : "FIXED",
+          used_n, call_duration_sec * 1000.0,
+          use_scheduler_ ? next_n_ : used_n,
+          deadline_miss_count_);
       }
       call_count_++;
-      // ----------------------------------
+      // -------------------------------------------------------------------
     }
 
     publishVelocity(cmd_vel);
@@ -278,6 +296,10 @@ private:
   MppiController mppi_;
   AnytimeScheduler scheduler_;
   int next_n_;
+
+  bool use_scheduler_ = true;
+  int fixed_baseline_n_ = 400;
+  int deadline_miss_count_ = 0;
 
   bool taking_off_ = true;
   Eigen::Vector3d ground_position_{0.0, 0.0, 0.0};
