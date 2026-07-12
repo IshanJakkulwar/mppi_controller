@@ -91,6 +91,19 @@ add_executable(cpu_load_generator
 )
 target_link_libraries(cpu_load_generator Threads::Threads)
 
+add_executable(test_n_quality_sweep
+  src/test_n_quality_sweep.cpp
+  src/mppi_controller.cpp
+  src/drone_model.cpp
+)
+target_include_directories(test_n_quality_sweep PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  ${EIGEN3_INCLUDE_DIR}
+)
+
+add_executable(analyze_equivalent_budget
+  src/analyze_equivalent_budget.cpp
+)
 install(TARGETS
   offboard_node
   test_drone_model
@@ -98,6 +111,8 @@ install(TARGETS
   test_mppi_controller
   test_anytime_mppi
   cpu_load_generator
+  test_n_quality_sweep
+  analyze_equivalent_budget
   DESTINATION lib/${PROJECT_NAME}
 )
 
