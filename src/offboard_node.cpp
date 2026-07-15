@@ -70,7 +70,7 @@ public:
     std::string csv_path = "/tmp/mppi_flight_log_" +
       std::to_string(this->now().nanoseconds()) + ".csv";
     csv_file_.open(csv_path);
-    csv_file_ << "epoch_sec,mode,phase,N,mppi_call_ms,mavros_roundtrip_ms,"
+    csv_file_ << "epoch_sec,mode,phase,N,mppi_call_ms,state_to_command_latency_ms,"
                  "pos_x,pos_y,pos_z,target_x,target_y,target_z,pos_error_m,"
                  "deadline_miss\n";
     RCLCPP_INFO(this->get_logger(), "Logging to: %s", csv_path.c_str());
@@ -169,14 +169,12 @@ private:
         ground_position_.z() + t * (hover_altitude_ - ground_position_.z()));
 
       if (t >= 1.0) {
-        taking_off_ = false;
-        mppi_.reset();
-        scheduler_.reset();
-        next_n_ = 200;
-        deadline_miss_count_ = 0;
-        RCLCPP_INFO(this->get_logger(),
-          "Takeoff ramp complete, switching to MPPI waypoint tracking (mode=%s)",
-          use_scheduler_ ? "ADAPTIVE" : "FIXED");
+          taking_off_ = false;
+          waiting_for_offboard_ = true;
+
+          RCLCPP_INFO(
+              this->get_logger(),
+              "Takeoff ramp complete. Waiting for OFFBOARD mode and arming before starting MPPI.");
       }
       return target;
     }
@@ -192,7 +190,7 @@ private:
     // MAVROS round-trip: time from last pose reception to this publish.
     // Includes MPPI compute time AND any ROS2/MAVROS overhead in between --
     // comparing this against mppi_call_ms_ isolates middleware overhead.
-    last_roundtrip_ms_ = (this->now() - last_pose_received_time_).seconds() * 1000.0;
+    state_to_command_latency_ms_ = (this->now() - last_pose_received_time_).seconds() * 1000.0;
 
     geometry_msgs::msg::TwistStamped msg;
     msg.header.stamp = this->now();
@@ -219,7 +217,7 @@ private:
                << phase << ","
                << n << ","
                << mppi_call_ms << ","
-               << last_roundtrip_ms_ << ","
+               << state_to_command_latency_ms_ << ","
                << drone_state_.position.x() << ","
                << drone_state_.position.y() << ","
                << drone_state_.position.z() << ","
@@ -243,6 +241,38 @@ private:
     if (!have_pose_) {
       publishVelocity(Eigen::Vector3d::Zero());
       return;
+    }
+    // Wait until PX4 has actually entered OFFBOARD and is armed before
+    // beginning waypoint tracking or collecting TRACKING statistics.
+    if (waiting_for_offboard_) {
+
+        publishVelocity(Eigen::Vector3d::Zero());
+
+        writeCsvRow(
+            now,
+            "WAITING",
+            0,
+            0.0,
+            computeTarget(),
+            0);
+
+        if (current_state_.armed &&
+            current_state_.mode == "OFFBOARD") {
+
+            waiting_for_offboard_ = false;
+
+            mppi_.reset();
+            scheduler_.reset();
+
+            next_n_ = 200;
+            deadline_miss_count_ = 0;
+
+            RCLCPP_INFO(
+                this->get_logger(),
+                "Vehicle is armed and in OFFBOARD. Beginning MPPI tracking.");
+        }
+
+        return;
     }
 
     if (!taking_off_ &&
@@ -303,12 +333,21 @@ private:
       call_count_++;
     }
 
-    if ((now - last_request_time_).seconds() > 5.0) {
-      last_request_time_ = now;
-      if (current_state_.mode != "OFFBOARD" && setpoints_sent_ > 20) {
-        requestOffboard();
-      } else if (!current_state_.armed && setpoints_sent_ > 20) {
-        requestArm();
+    if (setpoints_sent_ > 20) {
+
+      if (current_state_.mode != "OFFBOARD" &&
+          (now-last_request_time_).seconds()>1.0)
+      {
+          last_request_time_=now;
+          requestOffboard();
+      }
+
+      else if (current_state_.mode=="OFFBOARD" &&
+              !current_state_.armed &&
+              (now-last_request_time_).seconds()>1.0)
+      {
+          last_request_time_=now;
+          requestArm();
       }
     }
     setpoints_sent_++;
@@ -364,6 +403,7 @@ private:
   int deadline_miss_count_ = 0;
 
   bool taking_off_ = true;
+  bool waiting_for_offboard_ = false;
   Eigen::Vector3d ground_position_{0.0, 0.0, 0.0};
   rclcpp::Time takeoff_start_time_;
   double takeoff_duration_ = 3.0;
@@ -376,7 +416,7 @@ private:
 
   std::ofstream csv_file_;
   rclcpp::Time last_pose_received_time_;
-  double last_roundtrip_ms_ = 0.0;
+  double state_to_command_latency_ms_ = 0.0;
 };
 
 int main(int argc, char ** argv)
