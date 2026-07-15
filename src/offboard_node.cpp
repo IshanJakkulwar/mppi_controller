@@ -2,7 +2,9 @@
 #include <memory>
 #include <vector>
 #include <array>
-#include <ctime>
+#include <fstream>
+#include <iomanip>
+#include <string>
 
 #include "rclcpp/rclcpp.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
@@ -62,6 +64,17 @@ public:
 
     last_loop_time_ = this->now();
     last_request_time_ = this->now();
+    last_pose_received_time_ = this->now();
+
+    // --- CSV logging setup ---
+    std::string csv_path = "/tmp/mppi_flight_log_" +
+      std::to_string(this->now().nanoseconds()) + ".csv";
+    csv_file_.open(csv_path);
+    csv_file_ << "epoch_sec,mode,phase,N,mppi_call_ms,mavros_roundtrip_ms,"
+                 "pos_x,pos_y,pos_z,target_x,target_y,target_z,pos_error_m,"
+                 "deadline_miss\n";
+    RCLCPP_INFO(this->get_logger(), "Logging to: %s", csv_path.c_str());
+    // --------------------------
 
     timer_ = this->create_wall_timer(
       50ms, std::bind(&OffboardNode::timerCallback, this));
@@ -70,19 +83,26 @@ public:
       use_scheduler_ ? "ADAPTIVE (AnytimeScheduler)" : "FIXED (N=400 baseline)");
   }
 
+  ~OffboardNode()
+  {
+    if (csv_file_.is_open()) {
+      csv_file_.close();
+    }
+  }
+
 private:
   static MppiConfig makeMppiConfig()
   {
     MppiConfig config;
     config.horizon = 20;
-    config.num_samples = 200;  // used only as the very first call's N
+    config.num_samples = 200;
     config.dt = 0.1;
     config.state_weight = Eigen::Vector3d(10.0, 10.0, 10.0);
-    config.control_weight = Eigen::Vector3d(0.3, 0.3, 0.3);   // tuned
+    config.control_weight = Eigen::Vector3d(0.3, 0.3, 0.3);
     config.terminal_weight = Eigen::Vector3d(20.0, 20.0, 20.0);
-    config.noise_std = Eigen::Vector3d(0.5, 0.5, 0.5);        // tuned
+    config.noise_std = Eigen::Vector3d(0.5, 0.5, 0.5);
     config.max_speed = 2.0;
-    config.lambda = 3.0;                                       // tuned
+    config.lambda = 3.0;
     return config;
   }
 
@@ -92,8 +112,8 @@ private:
     config.n_min = 20;
     config.n_max = 400;
     config.n_default = 200;
-    config.target_loop_time = 0.05;   // matches the 20Hz control timer
-    config.deadline_margin = 0.6;     // budget 30ms of the 50ms cycle for MPPI
+    config.target_loop_time = 0.05;
+    config.deadline_margin = 0.6;
     config.smoothing_window = 3;
     return config;
   }
@@ -111,6 +131,11 @@ private:
       msg->pose.orientation.w, msg->pose.orientation.x,
       msg->pose.orientation.y, msg->pose.orientation.z);
     drone_state_.timestamp = this->now().seconds();
+
+    // Marks the start of the "state received -> command published" window,
+    // used to measure MAVROS/communication round-trip separately from
+    // MPPI's own compute time (addresses the middleware-latency critique).
+    last_pose_received_time_ = this->now();
 
     if (!have_pose_) {
       ground_position_ = drone_state_.position;
@@ -164,6 +189,11 @@ private:
 
   void publishVelocity(const Eigen::Vector3d & vel)
   {
+    // MAVROS round-trip: time from last pose reception to this publish.
+    // Includes MPPI compute time AND any ROS2/MAVROS overhead in between --
+    // comparing this against mppi_call_ms_ isolates middleware overhead.
+    last_roundtrip_ms_ = (this->now() - last_pose_received_time_).seconds() * 1000.0;
+
     geometry_msgs::msg::TwistStamped msg;
     msg.header.stamp = this->now();
     msg.header.frame_id = "map";
@@ -171,6 +201,34 @@ private:
     msg.twist.linear.y = vel.y();
     msg.twist.linear.z = vel.z();
     velocity_pub_->publish(msg);
+  }
+
+  void writeCsvRow(
+    const rclcpp::Time & now,
+    const std::string & phase,
+    int n,
+    double mppi_call_ms,
+    const Eigen::Vector3d & target,
+    int deadline_miss)
+  {
+    double pos_error = (drone_state_.position - target).norm();
+
+    csv_file_ << std::fixed << std::setprecision(6)
+               << now.seconds() << ","
+               << (use_scheduler_ ? "ADAPTIVE" : "FIXED") << ","
+               << phase << ","
+               << n << ","
+               << mppi_call_ms << ","
+               << last_roundtrip_ms_ << ","
+               << drone_state_.position.x() << ","
+               << drone_state_.position.y() << ","
+               << drone_state_.position.z() << ","
+               << target.x() << ","
+               << target.y() << ","
+               << target.z() << ","
+               << pos_error << ","
+               << deadline_miss << "\n";
+    csv_file_.flush();
   }
 
   void timerCallback()
@@ -200,11 +258,13 @@ private:
     Eigen::Vector3d cmd_vel;
 
     if (taking_off_) {
-      // Simple proportional climb, same as before -- MPPI/scheduler
-      // are reserved for waypoint tracking, not the vertical ramp.
       cmd_vel = Eigen::Vector3d(0.0, 0.0,
         mppi_controller::math_utils::clamp(
           (target.z() - drone_state_.position.z()) * 1.0, -1.0, 1.0));
+
+      publishVelocity(cmd_vel);
+      writeCsvRow(now, "TAKEOFF", 0, 0.0, target, 0);
+
     } else {
       // ---- MPPI call: adaptive N (scheduler) or fixed N (baseline) ----
       int used_n = use_scheduler_ ? next_n_ : fixed_baseline_n_;
@@ -213,6 +273,7 @@ private:
       cmd_vel = mppi_.computeVelocityCommandWithN(drone_state_, target, used_n);
       auto t1 = std::chrono::steady_clock::now();
       double call_duration_sec = std::chrono::duration<double>(t1 - t0).count();
+      double call_duration_ms = call_duration_sec * 1000.0;
 
       if (use_scheduler_) {
         next_n_ = scheduler_.recommendNextSampleCount(call_duration_sec, used_n);
@@ -222,24 +283,25 @@ private:
         }
       }
 
-      bool missed_deadline = call_duration_sec > 0.05;  // matches target_loop_time
+      bool missed_deadline = call_duration_sec > 0.05;
       if (missed_deadline) {
         deadline_miss_count_++;
       }
+
+      publishVelocity(cmd_vel);
+      writeCsvRow(now, "TRACKING", used_n, call_duration_ms, target,
+                  missed_deadline ? 1 : 0);
 
       if (call_count_ % 20 == 0) {
         RCLCPP_INFO(this->get_logger(),
           "[%s] N=%d call_time=%.2fms next_N=%d deadline_misses_so_far=%d",
           use_scheduler_ ? "ADAPTIVE" : "FIXED",
-          used_n, call_duration_sec * 1000.0,
+          used_n, call_duration_ms,
           use_scheduler_ ? next_n_ : used_n,
           deadline_miss_count_);
       }
       call_count_++;
-      // -------------------------------------------------------------------
     }
-
-    publishVelocity(cmd_vel);
 
     if ((now - last_request_time_).seconds() > 5.0) {
       last_request_time_ = now;
@@ -311,6 +373,10 @@ private:
   rclcpp::Time last_request_time_;
   int setpoints_sent_ = 0;
   int call_count_ = 0;
+
+  std::ofstream csv_file_;
+  rclcpp::Time last_pose_received_time_;
+  double last_roundtrip_ms_ = 0.0;
 };
 
 int main(int argc, char ** argv)

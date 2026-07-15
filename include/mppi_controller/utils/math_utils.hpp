@@ -43,12 +43,12 @@ public://random device uses the random fluctuations in battery health etc. in or
   Eigen::Vector3d sample(const Eigen::Vector3d & std_dev)
   {
     return Eigen::Vector3d(
-      dist_(generator_) * std_dev.x(),
+      dist_(generator_) * std_dev.x(),//manipulating with the random number
       dist_(generator_) * std_dev.y(),
       dist_(generator_) * std_dev.z());
   }
 
-private:
+private://stops other files changinng it, can access through function sample
   std::mt19937 generator_;
   std::normal_distribution<double> dist_;
 };
