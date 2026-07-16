@@ -1,195 +1,216 @@
 # Project Plan — Compute-Aware Anytime MPPI for UAV Control
-**Target: ICRA submission. Timeline: ~7 weeks remaining from this point.**
+**Target: ICRA/ECC submission. Timeline: ~7 weeks remaining from this point.**
+
+---
+
+## Research Questions
+
+- **RQ1:** Can runtime sample-count adaptation reduce control-deadline misses under variable
+  compute availability, relative to a fixed-sample baseline?
+- **RQ2:** Does adaptation preserve tracking accuracy relative to a fixed-sample baseline?
+- **RQ3:** Does adaptation reduce average computational cost relative to a fixed-sample baseline?
+- **RQ4:** Is the specific adaptation policy responsible for any observed benefit, or would a
+  constant reduced sample count (matched to the adaptive average) achieve the same result?
+  *(This is the question a constant-N control condition — see § Phase 2 — is designed to answer.)*
+
+## Hypotheses
+
+- **H1:** Adaptive MPPI produces fewer deadline misses than fixed-N=400 MPPI under sustained
+  CPU contention.
+- **H2:** Adaptive MPPI's tracking error (RMS, steady-state) is not significantly worse than
+  fixed-N=400's.
+- **H3:** Adaptive MPPI's average sample count is measurably lower than 400 under contention.
+- **H4:** The scheduler's sample count responds proportionally and promptly to changes in
+  measured per-cycle compute cost (visible as N dropping within 1-2 cycles of a call-time spike
+  and recovering within a few cycles of load easing).
+- **H5 (new, addresses RQ4):** Adaptive MPPI outperforms (fewer deadline misses and/or better
+  tracking) a *constant*-N controller fixed at adaptive's own observed average N, under the
+  same variable-load conditions. This isolates "adaptation helps" from "a lower fixed budget
+  would have been enough all along."
+
+## Success Criteria
+
+- Deadline misses: adaptive < fixed, under matched load conditions.
+- Tracking error: adaptive not significantly worse than fixed (statistical test, not eyeballing).
+- Average N: adaptive measurably below n_max under contention.
+- Adaptive outperforms constant-N-at-adaptive-average (H5) on at least one of deadline misses
+  or tracking error.
+- Control loop frequency (20Hz nominal) maintained without sustained degradation in all
+  conditions tested.
 
 ---
 
 ## Phase 0 — Sharpen the Contribution — ✅ CORE DONE
 
-**Goal:** move from "heuristic that seemed to work" to a defensible, principled contribution.
-
 ### Completed
-- [x] `test_n_quality_sweep.cpp`: multi-seed (10 seeds/N) sweep of N ∈ {20,50,100,150,200,250,300,350,400}
-  against a fixed straight-line tracking scenario (start (0,0,5), target (2,2,5)).
-  - **Result:** quality (MeanRMS) improves from 0.9115m (N=20) to 0.7893m (N=400) — a 13.4%
-    improvement for a 20x increase in N and ~19x increase in cost.
-  - **Elbow identified around N≈150–200.** Beyond N≈200, RMS changes are within the
-    measurement's own stddev (noise floor), i.e. statistically indistinguishable.
-  - Cost (`AvgCallTime_ms`) scales linearly with N (~0.055ms/sample).
-- [x] `analyze_equivalent_budget.cpp`: cross-referenced real stress-test log against the Pareto table.
-  - Adaptive scheduler averaged N=329.77 during a 30s CPU-load window (computed exactly from
-    31 real log samples, not estimated).
-  - Estimated RMS at that N (interpolated): 0.7916m, vs Fixed N=400's 0.7893m — a difference
-    of 0.0023m, an order of magnitude smaller than the table's own noise floor (~0.02–0.03m).
-  - **Headline finding:** adaptive achieved statistically indistinguishable quality using ~17.6%
-    less average compute, with 0 deadline misses vs fixed's 5, during the same load window.
-    This directly refutes "adaptive just used more compute."
-- [x] Literature check completed (see PROJECT_OVERVIEW.md § Related Work / references.bib).
-  Confirmed genuine gap: no existing work combines (a) MPPI specifically, (b) runtime/online
-  adaptation of sample count, (c) driven by measured compute availability, (d) with an explicit
-  deadline/safety mechanism, (e) validated on real or SITL UAV flight.
-- [x] `references.bib` created with confirmed + flagged-for-verification entries.
+- [x] `test_n_quality_sweep.cpp`: 10-seed sweep, N ∈ {20..400}. Elbow identified ~N=150-200;
+  gains beyond that are within the measurement's own noise floor.
+- [x] `analyze_equivalent_budget.cpp`: cross-referenced Pareto table against real stress-test
+  log (31 real samples, exact mean N=329.77). Estimated quality gap vs fixed N=400 was smaller
+  than the table's own noise floor.
+- [x] Literature check completed; gap identified between MPPI-for-UAV work (fixed N) and
+  control-scheduling co-design (adapts online, but for deterministic control). `references.bib`
+  started, several entries flagged for author-list verification before final citation.
 
 ### Remaining Phase 0 work
-- [ ] **Write the formal contribution statement** (1 paragraph) explicitly bridging the two
-  literatures identified: MPPI-for-UAV work (treats N as fixed/offline-tuned — cite Enrico et al.
-  2025) and control-scheduling co-design (adapts online, but for deterministic/linear control,
-  not stochastic sampling-based control — cite weakly-hard real-time survey, self-triggered MPC).
-- [ ] **Reformulate the scheduler's justification** using the Pareto data: restate the policy as
-  "select the smallest N that (a) fits within the deadline given current measured per-sample
-  cost, and (b) does not fall below the empirically-identified quality elbow (~N=150–200)."
-  This replaces "N = budget / time_per_sample" as a bare heuristic with a stated two-part
-  criterion grounded in data.
-- [ ] Reconsider scheduler config bounds in light of the elbow: current `n_min=20` may be too
-  low (real quality loss below ~100–150); current `n_max=400` may be higher than useful
-  (negligible gain above ~200–250). Decide whether to retune before Phase 2 reruns.
-- [ ] Verify author lists for the 5 "NEEDS VERIFICATION" entries in references.bib via Google
-  Scholar/arXiv before they're used in the actual paper.
+- [ ] Write the formal contribution statement bridging the two literatures (draft exists in
+  PROJECT_OVERVIEW.md § 8, needs finalizing after Phase 2 data is in).
+- [ ] **Important correction (per review):** the scheduler's *current implementation* is
+  `N = budget / measured_time_per_sample` — a direct heuristic. The "smallest N satisfying
+  deadline AND quality threshold" framing is a **planned refinement, not yet implemented.**
+  Documentation must describe what the code currently does, with the Pareto-informed version
+  explicitly marked as future work, until the refinement is actually coded. Do not describe the
+  refined version as already implemented anywhere in paper drafts.
+- [ ] Decide whether to actually implement the Pareto-informed refinement before Phase 2, or
+  defer it and run Phase 2 against the current heuristic, adding the refinement as a later
+  ablation arm. **Recommendation: defer** — Phase 2 needs to start soon; the current heuristic
+  is a legitimate, describable baseline in its own right, and the refinement can be Phase 2's
+  final ablation condition rather than a blocking prerequisite.
+- [ ] Verify author lists for flagged references.bib entries.
 
-**Estimated remaining time: 1–2 days.**
+**Estimated remaining time: 1 day** (reduced — deferring the scheduler refactor).
 
 ---
 
-## Phase 1 — Infrastructure — ✅ MOSTLY DONE
+## Phase 1 — Infrastructure — ✅ DONE
 
 ### Completed
-- [x] CSV logging added to `offboard_node.cpp` (epoch_sec, mode, phase, N, mppi_call_ms,
-  mavros_roundtrip_ms, position, target, pos_error_m, deadline_miss). Writes to
-  `/tmp/mppi_flight_log_<timestamp>.csv`.
-- [x] MAVROS round-trip timer added (`last_pose_received_time_` → `publishVelocity`), isolating
-  communication overhead from MPPI-only compute time.
-  - **First real measurement:** Mean MPPI call time 29.60ms vs Mean MAVROS round-trip 45.31ms
-    — roughly 15ms of non-MPPI overhead per cycle. This is the data point needed for the
-    Discussion/Limitations paragraph addressing the MAVROS-vs-native-DDS critique.
-  - **Known caveat to state honestly in the paper:** round-trip is measured as "time since last
-    pose arrival to next publish," which partially conflates real communication latency with
-    the natural asynchronous gap between MAVROS pose delivery and the 20Hz timer's own cadence.
-    It's an upper bound on overhead, not a purified isolated measurement.
-- [x] `plot_flight_log.py`: reads CSV(s), produces 4-panel plot (N over time, MPPI call time
-  with 50ms deadline line, MAVROS round-trip, tracking error), prints summary stats
-  (mean N, mean call time, mean round-trip, mean/RMS error, deadline miss count/rate).
-  Supports multi-file overlay for adaptive-vs-fixed comparison.
-- [x] **Bug found and fixed:** tracking-phase logging/waypoint advancement was gated only on the
-  3-second takeoff ramp timer, not on actual PX4 arm+OFFBOARD state. This caused ~9-10 seconds
-  of "TRACKING" phase data to be logged while the vehicle wasn't yet actually being commanded
-  effectively (visible as a flat ~4.5m error plateau in the first real flight plot). **User has
-  fixed this** — tracking phase (and CSV logging of it) now gates on `current_state_.armed &&
-  current_state_.mode == "OFFBOARD"`, not just the ramp timer.
+- [x] CSV logging in `offboard_node.cpp`.
+- [x] Communication-latency timer added, **renamed from `mavros_roundtrip_ms` to
+  `state_to_command_latency_ms`** for accuracy (it measures pose-received → command-published
+  wall time, which is a latency measurement, not strictly a MAVROS-internal round-trip).
+- [x] `plot_flight_log.py`: 4-panel plot + summary stats, multi-file overlay support.
+- [x] **Tracking-phase gating bug fixed and verified.** Root cause: tracking phase was
+  originally gated only on the takeoff ramp's fixed timer, not actual PX4 arm+OFFBOARD state.
+  Fix: gate on `current_state_.armed && current_state_.mode == "OFFBOARD"`. Confirmed via new
+  flight log — node now logs "Vehicle is armed and in OFFBOARD. Beginning MPPI tracking." at
+  the correct moment, and the resulting tracking-error plot no longer shows the artificial flat
+  plateau seen in the pre-fix run.
+- [x] Automated run script — *(confirm status; if not yet built, this remains the top blocker
+  for Phase 2 — see Immediate Next Actions)*.
 
-### Remaining Phase 1 work
-- [ ] **Re-verify the fix**: rerun a flight, confirm the tracking-error plot no longer shows a
-  flat plateau before dropping — error should start decreasing shortly after arm+OFFBOARD
-  actually engage, not ~9s later.
-- [ ] **Build the automated run script** (`run_trial.sh` or Python equivalent): launches
-  Gazebo+PX4+MAVROS+offboard_node (with configurable `use_scheduler` param)
-  +cpu_load_generator in the correct sequence, waits for completion, saves CSV with a
-  descriptive filename (e.g. `trial_adaptive_load32_run03.csv`), and exits cleanly. This is
-  the single biggest unlock for Phase 2 — without it, 10-20 repeated manual trials per
-  condition is unrealistic given the timeline.
-- [ ] Add basic crash/hang detection to the run script (timeout + process check) since SITL
-  stacks are known to occasionally hang or crash silently during long automated sessions.
-
-**Estimated remaining time: 2–3 days** (automated run script is the main remaining effort).
+**Status: essentially complete.** Remaining item is confirming the automated run script exists
+before Phase 2 trials begin at scale.
 
 ---
 
-## Phase 2 — SITL Statistical Validation — NOT STARTED
+## Phase 2 — SITL Statistical Validation — STAGED (per review feedback)
 
-**Goal:** convert the single confirmed stress-test result into statistically defensible evidence.
+**Restructured into three explicit stages, rather than "run 10-20x" as a single block — this
+catches logging/script problems early rather than after 18 wasted trials.**
 
-- [ ] Run **adaptive vs fixed, 10–20x each**, same load profile (32-thread, 30s), using the
-  automated run script from Phase 1. Save all CSVs with clear naming.
-- [ ] Compute **mean/stddev across trials** for: deadline miss count, RMS tracking error, mean N
-  (adaptive only), mean MPPI call time.
-- [ ] **Report performance at equivalent average computational budget where possible** (per
-  reviewer-critique addition) — for each adaptive trial, compute its actual average N, then
-  compare its tracking error against fixed-baseline trials, and/or against the interpolated
-  Pareto-table quality at that N, exactly as done once already in Phase 0 but now across many
-  trials with statistics rather than a single run.
-- [ ] **Run the ablation**: implement at least one alternative/naive adaptation rule (e.g. a
-  fixed linear ramp of N based on elapsed time, or a simple threshold on/off rule with no
-  proportional response) and run the same trial count against it. This directly answers "would
-  any adaptation have worked, or does the specific policy matter?"
-- [ ] **Add a second stress condition** beyond CPU load — either ROS2 topic-delivery latency
-  injection or an artificially reduced control loop rate — and repeat the adaptive-vs-fixed
-  comparison under that condition too.
-- [ ] Sanity-check reproducibility: confirm the core result (adaptive holds deadline misses low,
-  fixed's misses climb under load) is consistent across the trial set, not a lucky single run.
-- [ ] Regenerate all plots from Phase 1's script using the full trial set (aggregate/overlay
-  plots, not just single-run plots).
+### Phase 2A — Pilot (small, fast, catches problems)
+- [ ] Run 3x adaptive, 3x fixed (N=400), same 32-thread/30s load profile as the confirmed
+  single-trial result.
+- [ ] **Also run 3x constant-N-at-adaptive-average** (H5 / RQ4 condition — see below).
+- [ ] Manually inspect all 9 resulting CSVs and plots. Confirm: correct phase gating, no
+  crashes, no missing rows, no clock/timestamp anomalies, sensible N/latency/error ranges.
+- [ ] Fix anything broken here before proceeding — this is the checkpoint the review
+  specifically recommended.
 
-**Estimated time: 7–12 days.** This is the highest-risk phase for schedule slip — automated
-repeated Gazebo/PX4/MAVROS runs commonly surface flaky crashes, hangs, or nondeterministic SITL
-behavior not seen in single manual runs. Budget slack here specifically.
+### Phase 2B — Full trial set
+- [ ] Run remaining trials to reach 10-20x per condition (adaptive, fixed N=400, constant-N-
+  at-adaptive-average) — three conditions total, not two.
+- [ ] Same load profile throughout for the primary comparison; see Phase 2B-extended below for
+  the second stress condition.
+- [ ] **Phase 2B-extended:** repeat the three-condition comparison under a second stress
+  condition (ROS2 latency injection or reduced loop rate) — at reduced trial count (5-10x) if
+  time is tight, full count if time allows.
+
+### Phase 2C — Statistics & reporting
+- [ ] Compute mean/stddev across trials for: deadline misses, RMS tracking error (both
+  whole-trajectory and **steady-state-only**, see § Transient/Steady-State Reporting below),
+  mean N, mean MPPI call time, mean state-to-command latency.
+- [ ] Run an appropriate statistical test (e.g. Welch's t-test or Mann-Whitney U, given likely
+  non-normal small-sample distributions) comparing adaptive vs fixed and adaptive vs
+  constant-N, for both deadline-miss count and RMS error.
+- [ ] Report the **equivalent-computational-budget comparison** (per-trial average N vs
+  Pareto-table-interpolated quality) across the full trial set, not just the single Phase 0
+  instance.
+- [ ] Regenerate all plots as aggregate/overlay figures using the full trial set.
+
+**Estimated time: 7–12 days total across 2A/2B/2C.** Budget slack here — this remains the
+highest schedule-risk phase.
+
+### New addition: Constant-N baseline (addresses RQ4 / H5)
+Per review: in addition to Fixed (N=400) and Adaptive, add a third condition — **Fixed at a
+constant N equal to adaptive's own observed average** (currently ≈330-367 depending on run;
+finalize the exact constant once Phase 2A's adaptive pilot runs give a stable average). This
+directly tests whether the *scheduler itself* is doing useful work, or whether a fixed lower
+budget would have suffficed all along. If adaptive still shows fewer deadline misses and/or
+better tracking than this constant-N condition under the same variable load, that is strong,
+specific evidence for the adaptation mechanism itself — not just for "use less compute."
+
+### Transient vs. Steady-State Reporting (new, from latest flight analysis)
+The most recent confirmed flight (see PROJECT_OVERVIEW.md § 6) showed whole-trajectory RMS of
+1.03m, but steady-state (t > 15s, after the initial ~3.4m takeoff-to-first-target transient
+resolves) RMS is visibly under 0.15m from the plot. **Report both numbers going forward**, not
+just whole-trajectory RMS — the transient is a real, explainable phenomenon (physical distance
+between arming location and first active waypoint) and splitting it out prevents a reviewer
+mistakenly reading 1.03m as steady-state tracking quality.
+- [ ] Write a small script/analysis step (extending `plot_flight_log.py` or a new script) that
+  computes steady-state-only RMS by excluding an initial transient window (e.g. first 15s, or
+  more robustly, everything before tracking error first drops below some threshold like 0.5m
+  and stays there).
 
 ---
 
-## Phase 3 — Literature & Framing — PARTIALLY DONE (runs parallel to Phase 0/2)
+## Phase 3 — Literature & Framing — PARTIALLY DONE
 
-- [x] Initial lit search completed, gap identified, `references.bib` started.
-- [ ] Full Related Work section written (not just the bib file) — organize into: (a) MPPI/UAV
-  work treating N as fixed, (b) control-scheduling co-design for deterministic control, (c)
-  adaptive-importance-sampling MPPI variants (different axis of adaptation, worth
-  distinguishing explicitly).
-- [ ] Finalize paper title/framing based on what Phase 2's data actually shows (don't lock this
-  in until real statistical results exist).
+- [x] Initial lit search, gap identified.
+- [ ] Full Related Work section.
+- [ ] **Language correction (per review):** avoid absolute novelty claims like "no identified
+  work exists." Use "to the best of our knowledge" framing throughout — standard, defensible,
+  and does not overclaim.
+- [ ] Finalize framing once Phase 2 data is in.
 
-**Estimated time: 2–3 days dedicated, spread across Phase 0/2 timeline.**
+**Estimated time: 2–3 days, spread across Phase 0/2 timeline.**
 
 ---
 
 ## Phase 4 — HITL via UCL — NOT STARTED
+*(Unchanged from prior plan — see PROJECT_OVERVIEW.md for architecture/context. Summary:)*
+- [ ] Confirm rig specs (real Pixhawk/Jetson vs simulated physics; MAVROS vs native DDS).
+- [ ] Port `offboard_node`, retune scheduler bounds for real hardware compute profile.
+- [ ] Re-run core comparison (adaptive / fixed / constant-N) on HITL — confirmatory scope if
+  time is short, full statistical rigor if time allows.
 
-- [ ] Confirm exactly what UCL's rig provides: real Pixhawk + real companion computer (Jetson
-  Nano/Orin) vs simulated vehicle physics; confirm whether it uses MAVROS/MAVLink or native
-  PX4 uXRCE-DDS (relevant to the MAVROS-overhead discussion — if it's native DDS, that
-  partially validates results on a cleaner communication path "for free").
-- [ ] Port `offboard_node` to the HITL setup. Expect topic names / QoS profiles to need
-  adjustment depending on rig configuration.
-- [ ] **Retune scheduler bounds** (`n_min`, `n_max`, `deadline_margin`) for the HITL platform's
-  actual compute budget — a Jetson Nano/Orin will have a very different baseline call-time
-  profile than the development laptop; do NOT assume the SITL-tuned values transfer directly.
-  Consider re-running a small version of the Phase 0 Pareto sweep on the actual HITL compute
-  hardware if time allows, since T(N) will differ substantially from laptop measurements.
-- [ ] Re-run the adaptive-vs-fixed comparison on HITL. **Decision point:** if time is short,
-  treat this as confirmatory (fewer trials, e.g. 3-5x) rather than requiring full Phase 2-level
-  statistical rigor — the SITL results remain the primary evidence base either way.
-
-**Estimated time: 10–16 days.** Highest schedule risk in the entire plan — access logistics,
-unfamiliar hardware, and first-contact hardware issues routinely eat time even when nothing
-goes conceptually wrong.
-
-**Fallback plan (decide once Phase 2 is complete and remaining time is known):**
-1. Full scope but HITL results thin/exploratory rather than fully statistically validated, or
-2. Drop HITL from this submission entirely, submit SITL-only, treat HITL as a follow-up/journal
-   extension (a normal, accepted pattern: SITL-validated conference paper → hardware-validated
-   journal extension).
+**Estimated time: 10–16 days.** Highest schedule risk. Fallback options (SITL-only submission
+vs thin HITL confirmatory results) remain live — decide once Phase 2 is complete.
 
 ---
 
-## Phase 5 — Writing — NOT STARTED (Abstract/Intro can start early, see below)
+## Phase 5 — Writing — NOT STARTED (Abstract/Intro can start early)
 
-- [ ] Method section (largely reusable from existing architecture description in
-  PROJECT_OVERVIEW.md + the sharpened Phase 0 formulation).
-- [ ] Related Work (from Phase 3).
-- [ ] Experimental Design (finalized once Phase 2/4 actually run, not written speculatively).
-- [ ] Results (figures generated from Phase 2 + Phase 4 CSV data via `plot_flight_log.py` or
-  extensions of it).
-- [ ] Discussion/Limitations (MAVROS overhead measurement, SITL-vs-HITL scope, single-scenario
-  Pareto sweep caveat, interpolation-based equivalent-budget analysis caveat — all already
-  identified honestly above).
-- [ ] Abstract/Intro — **draft early** (see note below), finalize last once actual results are
-  final.
+- [ ] Method section.
+- [ ] Related Work.
+- [ ] **Threats to Validity subsection (new, per review — reviewers specifically value this):**
+  - *Internal validity:* stochastic MPPI sampling introduces run-to-run variance; Gazebo physics
+    engine variability; scheduler timing jitter from OS/ROS2 scheduling noise on the test
+    machine.
+  - *External validity:* evaluated on a single quadrotor trajectory-tracking task and vehicle
+    model; single-scenario Pareto sweep (straight-line tracking) may not generalize to all
+    trajectory shapes; development/SITL machine's CPU differs substantially from an embedded
+    companion computer (Jetson Nano/Orin) — HITL results (Phase 4) address this if completed.
+  - *Construct validity:* the synthetic CPU load generator (busy-wait threads) approximates
+    compute contention but may not perfectly replicate real contention sources (e.g. a
+    concurrent perception pipeline's actual CPU usage pattern, cache effects, memory bandwidth
+    contention).
+- [ ] Experimental Design (finalized from actual Phase 2/4 runs).
+- [ ] Results — **report hedged, not absolute, language for anything based on limited trials**
+  (per review: "In an initial stress-test experiment, X..." not "X proves Y" until Phase 2C's
+  statistics back it up).
+- [ ] Discussion/Limitations.
+- [ ] Abstract/Intro — draft early, finalize last.
 
-**Estimated time: 7–10 days** for a full first draft, assuming Abstract/Intro drafted early.
+**Estimated time: 7–10 days.**
 
 ---
 
 ## Phase 6 — Polish — NOT STARTED
-
 - [ ] Advisor/mentor review pass.
-- [ ] Figure formatting to ICRA spec, page limit compliance.
-- [ ] Proofreading, LaTeX template conformance, submission logistics (author info, supplementary
-  material if applicable).
+- [ ] Figure formatting, page limit compliance.
+- [ ] Proofreading, LaTeX template conformance, submission logistics.
 
 **Estimated time: 4–6 days.**
 
@@ -197,15 +218,14 @@ goes conceptually wrong.
 
 ## Overall Timeline Reality Check
 
-Sum of realistic-case phase estimates: **~5.5–8.5 weeks** against **~7 weeks remaining**. This
-plan fits only in the optimistic-to-middle case and has little slack if Phase 2 or Phase 4 runs
-long — which are exactly the phases most prone to real-world delay (flaky repeated simulation
-runs, hardware access/logistics). Keep both Phase 4 fallback options genuinely live; make the
-call concretely once Phase 2 is done and actual remaining runway is known, not before.
+Sum of realistic-case estimates: **~5–8 weeks** against **~7 weeks remaining**. Fits only in the
+optimistic-to-middle case. Phase 2 (now with a third condition and staged rollout) and Phase 4
+remain the biggest schedule risks. Keep Phase 4 fallback options genuinely live.
 
 ## Immediate Next Actions (in order)
-1. Re-verify the tracking-phase gating fix with a fresh flight + plot.
-2. Build the automated run script (unlocks all of Phase 2).
-3. Write the Phase 0 contribution statement + reformulated scheduler justification.
-4. Begin Phase 2 statistical trials.
-5. Start drafting Abstract/Intro in parallel (see PROJECT_OVERVIEW.md as the source document).
+1. Confirm the automated run script exists and works (top blocker for Phase 2 at scale).
+2. Finalize the constant-N value to test (based on adaptive's average across a few pilot runs).
+3. Run Phase 2A (3x each of adaptive / fixed / constant-N) — inspect everything before scaling up.
+4. Write the steady-state-RMS filtering analysis (small, high-value, addresses a real reviewer
+   question about the 1.03m whole-trajectory RMS number).
+5. Proceed to Phase 2B once 2A is clean.
