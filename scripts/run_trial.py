@@ -102,15 +102,33 @@ class LineMonitor:
                 self.tracking_started.set()
 
 
-def popen_group(cmd, prefix, cwd=None, extra_env=None):
-    """Launch cmd in its own process group (so we can kill the whole tree),
-    with merged stdout/stderr piped for monitoring."""
+def popen_group(cmd, prefix, cwd=None, extra_env=None, stdout_file=None):
+    """Launch cmd in its own process group (so we can kill the whole tree).
+
+    stdout_file=None: merged stdout/stderr piped for line monitoring (use
+    with LineMonitor, which drains the pipe -- an undrained pipe blocks the
+    child after ~64KB).
+    stdout_file=<path>: merged output appended to that file instead (for
+    chatty long-lived processes like PX4/Gazebo/MAVROS).
+
+    stdin is always a held-open pipe: PX4's pxh shell busy-spins on stdin
+    EOF (verified: /dev/null stdin produced a ~512MB prompt-loop log in
+    under a minute), so never give these processes /dev/null stdin.
+    """
     env = ros_env()
     if extra_env:
         env.update(extra_env)
-    proc = subprocess.Popen(
-        cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1, env=env, start_new_session=True)
+    if stdout_file is not None:
+        out = open(stdout_file, "ab", buffering=0)
+        proc = subprocess.Popen(
+            cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=out,
+            stderr=subprocess.STDOUT, env=env, start_new_session=True)
+        out.close()  # child holds its own fd
+    else:
+        proc = subprocess.Popen(
+            cmd, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, text=True, bufsize=1, env=env,
+            start_new_session=True)
     return proc
 
 
@@ -128,14 +146,59 @@ def kill_group(proc, timeout=10):
             pass
 
 
+# Patterns that identify sim-stack processes. Specific on purpose: a bare
+# "px4" or "ruby" would kill unrelated processes (this very script's path
+# contains no such string, but a user's editor or shell might).
+SIM_PROC_PATTERNS = ["bin/px4", "gz sim", "gzserver", "px4_sitl",
+                     "mavros_node", "make px4_sitl"]
+
+
+def find_sim_procs():
+    """Return [(pid, cmdline)] of live sim-stack processes, excluding
+    ourselves and shell wrappers that merely mention the pattern."""
+    out = subprocess.run(["ps", "-eo", "pid,args"], capture_output=True,
+                         text=True).stdout
+    procs = []
+    for line in out.splitlines()[1:]:
+        line = line.strip()
+        pid_str, _, cmdline = line.partition(" ")
+        if not any(p in cmdline for p in SIM_PROC_PATTERNS):
+            continue
+        if "bash -c" in cmdline or "run_trial.py" in cmdline \
+                or "ps -eo" in cmdline:
+            continue
+        procs.append((int(pid_str), cmdline.strip()))
+    return procs
+
+
 def hard_cleanup_sim():
-    """Safety net: kill any lingering PX4/Gazebo/MAVROS processes by name.
-    Runs on teardown so a fresh trial never inherits a stale sim."""
-    for name in ["px4", "gz sim", "gzserver", "ruby", "mavros_node",
-                 "px4_sitl"]:
-        subprocess.run(["pkill", "-9", "-f", name],
-                       capture_output=True, text=True)
+    """Safety net: kill any lingering sim-stack processes. Runs on teardown
+    so a fresh trial never inherits a stale sim."""
+    for pid, _ in find_sim_procs():
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
     time.sleep(3)
+
+
+def preflight_check():
+    """restart-sim owns the sim lifecycle. If a sim stack is already running
+    (hand-launched, or orphaned by a previous crash/Ctrl-C), a fresh PX4
+    will hit an instance conflict and exit cryptically -- so kill it here,
+    loudly, before the first trial."""
+    procs = find_sim_procs()
+    if not procs:
+        return
+    print("  WARNING: found an already-running sim stack. restart-sim mode "
+          "owns the sim lifecycle, so these will be terminated now:",
+          file=sys.stderr)
+    for pid, cmdline in procs:
+        print(f"    pid {pid}: {cmdline[:90]}", file=sys.stderr)
+    print("  (If you meant to use your own hand-launched sim, Ctrl-C now "
+          "and re-run with --no-restart.)", file=sys.stderr)
+    time.sleep(5)  # grace window to Ctrl-C before we pull the trigger
+    hard_cleanup_sim()
 
 
 # --------------------------------------------------------------------------
@@ -152,35 +215,91 @@ def mavros_connected(timeout=1.5):
         return False
 
 
-def bring_up_sim(args):
-    """Launch PX4 SITL (+Gazebo) and MAVROS; wait for FCU connection.
-    Returns (px4_proc, mavros_proc)."""
-    print("  Bringing up PX4 SITL + Gazebo (HEADLESS)...")
+PX4_READY_MARKER = b"Startup script returned successfully"
+MAVROS_CONNECTED_MARKER = b"Got HEARTBEAT"
+
+
+def tail_bytes(path, n=2000):
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - n))
+            return f.read().decode(errors="replace")
+    except OSError:
+        return "(no log)"
+
+
+def bring_up_sim(args, log_dir):
+    """Launch PX4 SITL (+Gazebo) and MAVROS; wait for PX4's startup marker,
+    then for the MAVROS FCU connection. Returns (px4_proc, mavros_proc).
+    Sim output goes to log files in log_dir, not pipes."""
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    px4_log = os.path.join(log_dir, f"{stamp}_px4.log")
+    mavros_log = os.path.join(log_dir, f"{stamp}_mavros.log")
+
+    print(f"  Bringing up PX4 SITL + Gazebo "
+          f"({'headless' if args.headless else 'with GUI'}); "
+          f"log: {px4_log}")
     px4 = popen_group(
         ["make", "px4_sitl", args.px4_target],
-        prefix="px4", cwd=args.px4_dir,
+        prefix="px4", cwd=args.px4_dir, stdout_file=px4_log,
         extra_env={"HEADLESS": "1"} if args.headless else None)
 
-    # Give PX4/Gazebo time to spin up before MAVROS tries to connect.
-    time.sleep(args.px4_warmup)
+    # Wait for PX4's own readiness marker rather than a blind sleep.
+    deadline = time.time() + args.px4_boot_timeout
+    ready = False
+    while time.time() < deadline:
+        if px4.poll() is not None:
+            raise RuntimeError(
+                "PX4 exited during startup. Last log lines:\n"
+                + tail_bytes(px4_log))
+        try:
+            with open(px4_log, "rb") as f:
+                if PX4_READY_MARKER in f.read():
+                    ready = True
+                    break
+        except OSError:
+            pass
+        time.sleep(2)
+    if not ready:
+        raise RuntimeError(
+            f"PX4 not ready within {args.px4_boot_timeout}s. Last log "
+            "lines:\n" + tail_bytes(px4_log))
+    print("  PX4 startup script completed.")
 
-    print("  Launching MAVROS...")
+    print(f"  Launching MAVROS; log: {mavros_log}")
     mavros = popen_group(
         ["ros2", "launch", "mavros", "px4.launch",
          f"fcu_url:={args.fcu_url}"],
-        prefix="mavros")
+        prefix="mavros", stdout_file=mavros_log)
 
-    print("  Waiting for MAVROS FCU connection...")
+    # Gate on MAVROS's own heartbeat log line rather than a `ros2 topic
+    # echo` probe: the CLI depends on the ros2 daemon's discovery cache and
+    # was observed reporting "topic not published yet" while MAVROS was in
+    # fact connected -- the log marker is authoritative.
+    print("  Waiting for MAVROS FCU connection (heartbeat in log)...")
     deadline = time.time() + args.connect_timeout
     while time.time() < deadline:
-        if mavros_connected():
-            print("  MAVROS connected to PX4.")
-            return px4, mavros
+        try:
+            with open(mavros_log, "rb") as f:
+                if MAVROS_CONNECTED_MARKER in f.read():
+                    print("  MAVROS connected to PX4.")
+                    # brief settle so subscribers/publishers finish wiring
+                    time.sleep(3)
+                    return px4, mavros
+        except OSError:
+            pass
         if px4.poll() is not None:
-            raise RuntimeError("PX4 exited during startup")
-        time.sleep(3)
+            raise RuntimeError("PX4 died while waiting for MAVROS. Last "
+                               "log lines:\n" + tail_bytes(px4_log))
+        if mavros.poll() is not None:
+            raise RuntimeError("MAVROS exited during startup. Last log "
+                               "lines:\n" + tail_bytes(mavros_log))
+        time.sleep(2)
     raise RuntimeError(
-        f"MAVROS did not connect within {args.connect_timeout}s")
+        f"MAVROS did not connect within {args.connect_timeout}s. MAVROS "
+        "log tail:\n" + tail_bytes(mavros_log))
 
 
 def tear_down_sim(px4, mavros):
@@ -247,7 +366,8 @@ def run_node_trial(args, dest_path):
         print("  Starting CPU load generator...")
         load = popen_group(
             ["ros2", "run", "mppi_controller", "cpu_load_generator",
-             str(args.load_threads), str(args.load_duration)], prefix="load")
+             str(args.load_threads), str(args.load_duration)],
+            prefix="load", stdout_file=os.devnull)
 
         remaining = args.tracking_duration - (time.time() - t_start)
         if remaining > 0:
@@ -283,7 +403,7 @@ def run_one_trial_with_retries(args):
         px4 = mavros = None
         try:
             if args.restart_sim:
-                px4, mavros = bring_up_sim(args)
+                px4, mavros = bring_up_sim(args, args.sim_log_dir)
             run_node_trial(args, dest)
         except Exception as exc:  # noqa: BLE001 -- report and retry
             print(f"  Trial attempt {attempt} errored: {exc}", file=sys.stderr)
@@ -380,9 +500,11 @@ def main():
     parser.add_argument("--headless", action="store_true", default=True)
     parser.add_argument("--no-headless", dest="headless",
                         action="store_false")
-    parser.add_argument("--px4-warmup", type=int, default=25,
-                        help="seconds to let PX4/Gazebo boot before MAVROS")
+    parser.add_argument("--px4-boot-timeout", type=int, default=90,
+                        help="max seconds to wait for PX4's startup marker")
     parser.add_argument("--connect-timeout", type=int, default=120)
+    parser.add_argument("--sim-log-dir", default="results/sim_logs",
+                        help="where PX4/MAVROS boot logs are written")
 
     # timeouts
     parser.add_argument("--arm-timeout", type=int, default=120)
@@ -403,15 +525,28 @@ def main():
     print(f"Reset strategy: {mode}. Condition: {args.condition}. "
           f"Trials: {args.trials}.")
 
+    if args.restart_sim:
+        os.makedirs(args.sim_log_dir, exist_ok=True)
+        preflight_check()
+
     saved = []
-    for i in range(args.trials):
-        print(f"\n=== {args.condition} trial {i + 1}/{args.trials} ===")
-        path = run_one_trial_with_retries(args)
-        if path:
-            saved.append(path)
-        else:
-            print(f"  Trial {i + 1} FAILED after retries -- see log above.",
-                  file=sys.stderr)
+    try:
+        for i in range(args.trials):
+            print(f"\n=== {args.condition} trial {i + 1}/{args.trials} ===")
+            path = run_one_trial_with_retries(args)
+            if path:
+                saved.append(path)
+            else:
+                print(f"  Trial {i + 1} FAILED after retries -- see log "
+                      "above.", file=sys.stderr)
+    except KeyboardInterrupt:
+        print("\nInterrupted -- cleaning up sim processes before exit...",
+              file=sys.stderr)
+    finally:
+        if args.restart_sim:
+            # Never leave orphaned PX4/Gazebo/MAVROS behind (a previous
+            # version did, and the stale instance broke the next run).
+            hard_cleanup_sim()
 
     print(f"\nDone. {len(saved)}/{args.trials} valid trial(s) saved:")
     for path in saved:

@@ -153,9 +153,20 @@ hygiene.)
     t+20 the contention lands during hover-hold, not active trajectory-following. Valid test
     of steady-state hold under load; drop `--load-offset` to ~3-5s if active-tracking stress
     is wanted instead.
-- [ ] **NEXT: supervised shakedown of `--restart-sim`** (I can't test the PX4/Gazebo
-  lifecycle) — run 1 trial watching it bring up / tear down the stack cleanly, then a fresh
-  3x3 pilot, before scaling to 2B.
+- [x] **Shakedown of `--restart-sim` — PASSED (2026-07-17, run end-to-end on the dev
+  machine).** One full adaptive trial: fresh PX4+Gazebo boot (headless), MAVROS heartbeat
+  gate, ground takeoff, full 4/4 waypoint circuit at 20.0 Hz, load window on schedule at
+  t+20-50 (mean N 288 in-window vs 392 after), error converged to 0.06 m, validity guard
+  passed, clean teardown with zero leftover processes. Three lifecycle bugs found and fixed
+  during the shakedown: (1) no pre-flight check — a hand-launched or orphaned sim caused a
+  cryptic "PX4 exited during startup" (instance conflict); now detected and cleaned loudly
+  with a 5s Ctrl-C grace window; (2) PX4 stdin must be a held-open pipe — /dev/null stdin
+  makes pxh busy-spin on EOF (produced a 512MB log in under a minute); (3) the MAVROS
+  connection probe via `ros2 topic echo` was unreliable (CLI discovery-cache miss while
+  MAVROS was in fact connected) — replaced with the authoritative "Got HEARTBEAT" marker in
+  the captured MAVROS log. Ctrl-C/exit now always runs sim cleanup.
+- [ ] **NEXT: fresh 3x3 pilot via `--restart-sim`** (results/ wiped of the confounded pilot
+  first, or kept side-by-side), then scale to 2B.
 
 ### Phase 2B — Full trial set
 - [ ] Run remaining trials to reach 10-20x per condition (adaptive, constant N=330, fixed
