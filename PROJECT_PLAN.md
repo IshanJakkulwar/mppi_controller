@@ -215,14 +215,52 @@ relying on machine-wide oversubscription.
   a constant tuned to one contention level becomes insufficient — that is the actual
   argument for adaptation. → **GO for Phase 2B.**
 
-### Phase 2B — Full trial set
-- [ ] Run remaining trials to reach 10-20x per condition (adaptive, constant N=330, fixed
-  N=400) — three conditions total, not two.
-- [ ] Same load profile throughout for the primary comparison; see Phase 2B-extended below for
-  the second stress condition.
-- [ ] **Phase 2B-extended:** repeat the three-condition comparison under a second stress
-  condition (ROS2 latency injection or reduced loop rate) — at reduced trial count (5-10x) if
-  time is tight, full count if time allows.
+### Phase 2B — Full trial set — ✅ PRIMARY DONE (2026-07-17)
+- [x] 13 trials per condition (adaptive / constant N=330 / fixed N=400), all valid, under
+  the locked stress condition. **H1 confirmed** (adaptive 0.15±0.38 vs fixed400 18.0±4.1
+  misses, Welch & Mann-Whitney p<0.0001). **H2 confirmed** (ss-RMS indistinguishable,
+  adaptive 0.131 vs fixed400 0.155, p=0.35). **H3 confirmed** (mean N 365 vs 400; in-window
+  ~300 regulated at 30.0ms). Scheduler validation: response 1.4 cycles, recovery 1.6, mean
+  |ΔN| ~2 (no chatter).
+- [x] **H4 vs const330: statistical tie at 20Hz (0.15 vs 0.23 misses, RMS equal) — accepted
+  and reframed, not hidden.** Under the tested condition a well-chosen constant matches
+  adaptation. Reframed contribution (per external review, honest framing): (1) decisive
+  win over the conventional fixed-N=400 deployment; (2) adaptation *discovered online* the
+  equivalent budget that otherwise requires an offline Pareto sweep + stress calibration to
+  find; (3) the RMS tie *confirms* Phase 0's equivalent-budget interpolation prediction;
+  (4) cross-regime robustness is the constant's real weakness — see 2B-extended.
+- [x] **Load-saturation finding (report in paper, likely Limitations/Discussion):** at 20Hz
+  on this platform, no fair-share load level can push const330 over the deadline — CPU
+  contention saturates at ~1.4x per-sample inflation (6/10/mem-thrash threads all
+  equivalent; next step, 1-core pin, destabilizes flight). The OS scheduler (CFS/EEVDF)
+  structurally shields periodic control tasks from fair-share contention. Combined with the
+  Pareto curve's flatness beyond N≈200, **no 20Hz experiment on this platform can separate
+  adaptive from const330 in either direction** — motivating the deadline-scarcity condition
+  below rather than further load escalation.
+
+### Phase 2B-extended — Tight-deadline condition (pre-registered option) — CALIBRATED, GO
+The plan pre-specified "ROS2 latency injection **or reduced loop rate**" as the second
+stress condition before any Phase 2 data existed; reduced loop rate is the one executed.
+**Framing discipline (per external review): this is a separate, clearly-labeled secondary
+experiment about deadline scarcity — same trajectory, same controller code, same load
+profile, same everything except the control period (40Hz / 25ms deadline vs 20Hz / 50ms).
+Designed as a fair test, reported whatever the outcome.** Justification for the regime:
+the target deployment class (Jetson-class companion computers) is several times slower per
+sample than the dev machine — 25ms here is a proxy for embedded compute-to-deadline
+ratios, which is what the scheduler's ratio-based law actually responds to.
+- [x] Node gains a `loop_rate_hz` parameter (deadline = loop period; scheduler budget =
+  0.6 x period, unchanged law). `run_trial.py --loop-hz`. Load generator gains a `mem`
+  mode (64MB/thread cache-thrash; kept for completeness — saturates like spin at 20Hz).
+- [x] **Calibration head-to-head @40Hz, 2-core/6-thread load:** const330 idle-OK (19.3ms,
+  3 misses/801) but **100% in-window miss rate** (28.9ms vs 25ms deadline, 1035/1035),
+  effective rate degrades to 38.2Hz; adaptive re-regulates to 15.0ms (=0.6x25ms) with
+  N 252 idle → 143 in-window, **0 in-window misses**, full 40.0Hz. Both flights valid,
+  tracking equal. Adaptive discovered a different budget for a different deadline with
+  zero retuning — the cross-regime claim now has data at both regimes.
+- [ ] **NEXT: 8 trials per condition @40Hz** into `results_40hz/` (separate dir — mode
+  labels don't encode loop rate, so keep regimes in separate directories):
+  `run_trial.py --condition {adaptive|const330|fixed400} --trials 8 --loop-hz 40`
+  then `analyze_trials.py results_40hz/`.
 
 ### Phase 2C — Statistics & reporting
 - [ ] Compute mean/stddev across trials for: deadline misses, RMS tracking error (both

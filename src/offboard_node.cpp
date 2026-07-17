@@ -45,6 +45,15 @@ public:
     this->declare_parameter<int>("fixed_n", 400);
     fixed_baseline_n_ = static_cast<int>(this->get_parameter("fixed_n").as_int());
 
+    // Control loop rate. 20Hz (50ms deadline) is the primary condition;
+    // Phase 2B-extended runs a tighter deadline (e.g. 40Hz / 25ms) to test
+    // adaptation under deadline scarcity rather than compute contention.
+    // The deadline equals the loop period; the scheduler's compute budget
+    // is deadline_margin (0.6) times that, as at 20Hz.
+    this->declare_parameter<double>("loop_rate_hz", 20.0);
+    double loop_rate_hz = this->get_parameter("loop_rate_hz").as_double();
+    loop_period_sec_ = 1.0 / loop_rate_hz;
+
     if (use_scheduler_) {
       mode_label_ = "ADAPTIVE";
     } else if (fixed_baseline_n_ == 400) {
@@ -92,11 +101,17 @@ public:
     // --------------------------
 
     timer_ = this->create_wall_timer(
-      50ms, std::bind(&OffboardNode::timerCallback, this));
+      std::chrono::duration<double>(loop_period_sec_),
+      std::bind(&OffboardNode::timerCallback, this));
 
-    RCLCPP_INFO(this->get_logger(), "offboard_node started, mode=%s%s",
+    // Scheduler must target the actual loop period, not the 20Hz default.
+    scheduler_ = AnytimeScheduler(makeSchedulerConfig(loop_period_sec_));
+
+    RCLCPP_INFO(this->get_logger(),
+      "offboard_node started, mode=%s%s, loop=%.0fHz (deadline %.1fms)",
       mode_label_.c_str(),
-      use_scheduler_ ? " (AnytimeScheduler)" : "");
+      use_scheduler_ ? " (AnytimeScheduler)" : "",
+      loop_rate_hz, loop_period_sec_ * 1000.0);
   }
 
   ~OffboardNode()
@@ -122,13 +137,13 @@ private:
     return config;
   }
 
-  static SchedulerConfig makeSchedulerConfig()
+  static SchedulerConfig makeSchedulerConfig(double target_loop_time = 0.05)
   {
     SchedulerConfig config;
     config.n_min = 20;
     config.n_max = 400;
     config.n_default = 200;
-    config.target_loop_time = 0.05;
+    config.target_loop_time = target_loop_time;
     config.deadline_margin = 0.6;
     config.smoothing_window = 3;
     return config;
@@ -244,7 +259,7 @@ private:
     double dt = (now - last_loop_time_).seconds();
     last_loop_time_ = now;
     if (dt <= 0.0) {
-      dt = 0.05;
+      dt = loop_period_sec_;
     }
 
     if (!have_pose_) {
@@ -337,7 +352,7 @@ private:
         }
       }
 
-      bool missed_deadline = call_duration_sec > 0.05;
+      bool missed_deadline = call_duration_sec > loop_period_sec_;
       if (missed_deadline) {
         deadline_miss_count_++;
       }
@@ -425,6 +440,7 @@ private:
   bool use_scheduler_ = true;
   int fixed_baseline_n_ = 400;
   std::string mode_label_ = "ADAPTIVE";
+  double loop_period_sec_ = 0.05;
   int deadline_miss_count_ = 0;
 
   bool taking_off_ = true;

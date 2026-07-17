@@ -288,7 +288,7 @@ def print_scheduler_validation(by_condition):
               "overlay plots / load window manually.")
 
 
-def plot_overlay(by_condition, out_path):
+def plot_overlay(by_condition, out_path, deadline_ms=DEADLINE_MS):
     fig, axes = plt.subplots(3, 1, figsize=(10, 11), sharex=True)
     for cond in CONDITION_ORDER:
         for k, tr in enumerate(by_condition.get(cond, [])):
@@ -302,9 +302,9 @@ def plot_overlay(by_condition, out_path):
                          linewidth=0.9, label=label)
     axes[0].set_ylabel("N")
     axes[0].set_title("Sample count (all trials, by condition)")
-    axes[1].axhline(DEADLINE_MS, color="red", linestyle="--", alpha=0.5)
+    axes[1].axhline(deadline_ms, color="red", linestyle="--", alpha=0.5)
     axes[1].set_ylabel("MPPI call time (ms)")
-    axes[1].set_title("Computation time (red dashed = 50ms deadline)")
+    axes[1].set_title(f"Computation time (red dashed = {deadline_ms:.0f}ms deadline)")
     axes[2].axhline(SS_THRESHOLD_M, color="gray", linestyle=":", alpha=0.5)
     axes[2].set_ylabel("Position error (m)")
     axes[2].set_xlabel("Time since tracking start (s)")
@@ -357,6 +357,9 @@ def main():
                         help="CSV files and/or directories of trials")
     parser.add_argument("--output-dir", default=None,
                         help="figure output dir (default: <first path>/analysis)")
+    parser.add_argument("--deadline-ms", type=float, default=DEADLINE_MS,
+                        help="deadline line drawn on the call-time plot "
+                             "(50 for the 20Hz condition, 25 for 40Hz)")
     args = parser.parse_args()
 
     files = collect_csv_files(args.paths)
@@ -380,7 +383,8 @@ def main():
     out_dir = args.output_dir or os.path.join(
         args.paths[0] if os.path.isdir(args.paths[0]) else ".", "analysis")
     os.makedirs(out_dir, exist_ok=True)
-    plot_overlay(by_condition, os.path.join(out_dir, "overlay_timeseries.png"))
+    plot_overlay(by_condition, os.path.join(out_dir, "overlay_timeseries.png"),
+                 deadline_ms=args.deadline_ms)
     plot_dn_distribution(by_condition, os.path.join(out_dir, "dn_distribution.png"))
     plot_boxplots(by_condition, os.path.join(out_dir, "boxplots.png"))
     print(f"\nFigures written to {out_dir}/")

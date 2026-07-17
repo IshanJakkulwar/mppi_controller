@@ -359,7 +359,8 @@ def run_node_trial(args, dest_path):
     pin = ["taskset", "-c", args.cpuset] if args.cpuset else []
 
     node_cmd = (pin + ["ros2", "run", "mppi_controller", "offboard_node",
-                       "--ros-args"] + CONDITIONS[args.condition])
+                       "--ros-args"] + CONDITIONS[args.condition]
+                + ["-p", f"loop_rate_hz:={args.loop_hz}"])
     print(f"  Launching node: {' '.join(node_cmd)}")
     node = popen_group(node_cmd, prefix="node")
     monitor = LineMonitor(node, "node")
@@ -377,7 +378,8 @@ def run_node_trial(args, dest_path):
         print("  Starting CPU load generator...")
         load = popen_group(
             pin + ["ros2", "run", "mppi_controller", "cpu_load_generator",
-                   str(args.load_threads), str(args.load_duration)],
+                   str(args.load_threads), str(args.load_duration),
+                   args.load_mode],
             prefix="load", stdout_file=os.devnull)
 
         remaining = args.tracking_duration - (time.time() - t_start)
@@ -502,6 +504,15 @@ def main():
                         help="pin node+load to these cores (emulates "
                              "embedded compute envelope); '' disables")
     parser.add_argument("--load-threads", type=int, default=6)
+    parser.add_argument("--load-mode", choices=["spin", "mem"],
+                        default="spin",
+                        help="spin = ALU busy-wait (primary condition); "
+                             "mem = 64MB cache/bandwidth thrash per thread "
+                             "(perception-like, 2B-extended condition)")
+    parser.add_argument("--loop-hz", type=float, default=20.0,
+                        help="control loop rate / deadline (20 = primary "
+                             "50ms condition; 40 = 2B-extended 25ms "
+                             "tight-deadline condition)")
     parser.add_argument("--load-duration", type=int, default=30)
     parser.add_argument("--load-offset", type=int, default=20,
                         help="seconds after tracking start to begin the load")
