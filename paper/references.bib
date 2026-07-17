@@ -1,0 +1,140 @@
+% references.bib — Compute-Aware Anytime MPPI for UAV Control (ECC submission)
+% All author lists verified against primary sources 2026-07-18 (see PROJECT_PLAN Phase 3).
+% Entries marked TODO-pages need page numbers pulled from the final proceedings PDF.
+
+% ---------- MPPI foundations ----------
+
+@inproceedings{williams2016aggressive,
+  author    = {Williams, Grady and Drews, Paul and Goldfain, Brian and Rehg, James M. and Theodorou, Evangelos A.},
+  title     = {Aggressive Driving with Model Predictive Path Integral Control},
+  booktitle = {IEEE International Conference on Robotics and Automation (ICRA)},
+  year      = {2016},
+  pages     = {1433--1440},
+  doi       = {10.1109/ICRA.2016.7487277}
+}
+
+@article{williams2018information,
+  author  = {Williams, Grady and Drews, Paul and Goldfain, Brian and Rehg, James M. and Theodorou, Evangelos A.},
+  title   = {Information-Theoretic Model Predictive Control: Theory and Applications to Autonomous Driving},
+  journal = {IEEE Transactions on Robotics},
+  year    = {2018},
+  volume  = {34},
+  number  = {6},
+  pages   = {1603--1622},
+  doi     = {10.1109/TRO.2018.2865891}
+}
+
+% ---------- MPPI on aerial platforms / embedded hardware ----------
+
+@article{enrico2025comparison,
+  author  = {Enrico, Riccardo and Mancini, Mauro and Capello, Elisa},
+  title   = {Comparison of {NMPC} and {GPU}-Parallelized {MPPI} for Real-Time {UAV} Control on Embedded Hardware},
+  journal = {Applied Sciences},
+  year    = {2025},
+  volume  = {15},
+  number  = {16},
+  pages   = {9114},
+  doi     = {10.3390/app15169114},
+  note    = {TODO-verify: first names inferred from MDPI listing; initials confirmed as R. Enrico, M. Mancini, E. Capello}
+}
+
+@inproceedings{minarik2024mppi,
+  author    = {Mina{\v{r}}{\'i}k, Michal and P{\v{e}}ni{\v{c}}ka, Robert and Von{\'a}sek, Vojt{\v{e}}ch and Saska, Martin},
+  title     = {Model Predictive Path Integral Control for Agile Unmanned Aerial Vehicles},
+  booktitle = {IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
+  year      = {2024},
+  note      = {TODO-pages. Preprint: arXiv:2407.09812},
+  doi       = {10.1109/IROS58592.2024.10802756}
+}
+
+% ---------- Adaptive sampling within MPPI (distribution, not count) ----------
+
+@inproceedings{asmar2023mpopis,
+  author    = {Asmar, Dylan M. and Senanayake, Ransalu and Manuel, Shawn and Kochenderfer, Mykel J.},
+  title     = {Model Predictive Optimized Path Integral Strategies},
+  booktitle = {IEEE International Conference on Robotics and Automation (ICRA)},
+  year      = {2023},
+  note      = {TODO-pages. Preprint: arXiv:2203.16633},
+  doi       = {10.1109/ICRA48891.2023.10160929}
+}
+
+% ---------- Weakly-hard real-time & deadline-miss-aware control ----------
+
+@article{bernat2001weakly,
+  author  = {Bernat, Guillem and Burns, Alan and Llamos{\'i}, Albert},
+  title   = {Weakly Hard Real-Time Systems},
+  journal = {IEEE Transactions on Computers},
+  year    = {2001},
+  volume  = {50},
+  number  = {4},
+  pages   = {308--321},
+  doi     = {10.1109/12.919277}
+}
+
+@inproceedings{maggio2020control,
+  author    = {Maggio, Martina and Hamann, Arne and Mayer-John, Eckart and Ziegenbein, Dirk},
+  title     = {Control-System Stability Under Consecutive Deadline Misses Constraints},
+  booktitle = {32nd Euromicro Conference on Real-Time Systems (ECRTS)},
+  series    = {LIPIcs},
+  volume    = {165},
+  year      = {2020},
+  pages     = {21:1--21:24},
+  doi       = {10.4230/LIPIcs.ECRTS.2020.21},
+  note      = {TODO-verify: co-author list taken from proceedings listing; confirm spelling against the PDF}
+}
+
+% ---------- Event-/self-triggered and resource-aware MPC ----------
+
+@inproceedings{heemels2012introduction,
+  author    = {Heemels, W. P. M. H. and Johansson, Karl H. and Tabuada, Paulo},
+  title     = {An Introduction to Event-Triggered and Self-Triggered Control},
+  booktitle = {IEEE 51st Conference on Decision and Control (CDC)},
+  year      = {2012},
+  pages     = {3270--3285},
+  doi       = {10.1109/CDC.2012.6425820}
+}
+
+@article{gommans2015resource,
+  author  = {Gommans, T. M. P. and Heemels, W. P. M. H.},
+  title   = {Resource-Aware {MPC} for Constrained Nonlinear Systems: A Self-Triggered Control Approach},
+  journal = {Systems \& Control Letters},
+  year    = {2015},
+  volume  = {79},
+  pages   = {59--67},
+  doi     = {10.1016/j.sysconle.2015.03.003}
+}
+
+% ---------- Anytime computation and control ----------
+
+@inproceedings{fontanelli2008anytime,
+  author    = {Fontanelli, Daniele and Greco, Luca and Bicchi, Antonio},
+  title     = {Anytime Control Algorithms for Embedded Real-Time Systems},
+  booktitle = {Hybrid Systems: Computation and Control (HSCC)},
+  series    = {LNCS},
+  volume    = {4981},
+  year      = {2008},
+  pages     = {158--171},
+  doi       = {10.1007/978-3-540-78929-1_12}
+}
+
+@article{quevedo2013sequence,
+  author  = {Quevedo, Daniel E. and Gupta, Vijay},
+  title   = {Sequence-Based Anytime Control},
+  journal = {IEEE Transactions on Automatic Control},
+  year    = {2013},
+  volume  = {58},
+  number  = {2},
+  pages   = {377--390},
+  doi     = {10.1109/TAC.2012.2209977}
+}
+
+@article{pant2021anytime,
+  author  = {Pant, Yash Vardhan and Abbas, Houssam and Mohta, Kartik and Quaye, Rhudii A. and Nghiem, Truong X. and Devietti, Joseph and Mangharam, Rahul},
+  title   = {Anytime Computation and Control for Autonomous Systems},
+  journal = {IEEE Transactions on Control Systems Technology},
+  year    = {2021},
+  volume  = {29},
+  number  = {2},
+  pages   = {768--779},
+  doi     = {10.1109/TCST.2020.2977775}
+}

@@ -363,16 +363,33 @@ Applied uniformly to every trial in every condition by `scripts/analyze_trials.p
 
 ---
 
-## Phase 3 — Literature & Framing — PARTIALLY DONE
+## Phase 3 — Literature & Framing — ✅ DRAFT COMPLETE (2026-07-18)
 
 - [x] Initial lit search, gap identified.
-- [ ] Full Related Work section.
-- [ ] **Language correction (per review):** avoid absolute novelty claims like "no identified
-  work exists." Use "to the best of our knowledge" framing throughout — standard, defensible,
-  and does not overclaim.
-- [ ] Finalize framing once Phase 2 data is in.
+- [x] **Full Related Work section drafted** — `paper/related_work.md`. Three threads:
+  (A) MPPI on aerial/embedded platforms (Williams ICRA'16 / T-RO'18 foundations; Minařík
+  et al. IROS'24 first onboard-GPU MPPI flight; Enrico/Mancini/Capello Applied Sciences'25
+  — NMPC-vs-MPPI on Jetson Orin Nano with ROS2/PX4, fixed config derived offline);
+  (B) resource-aware control (anytime control: Fontanelli/Greco/Bicchi HSCC'08,
+  Quevedo/Gupta TAC'13, Pant et al. TCST'21 anytime-estimation co-design; event/self-
+  triggered MPC: Heemels CDC'12, Gommans/Heemels SCL'15; weakly-hard: Bernat TC'01,
+  Maggio ECRTS'20 stability under consecutive misses);
+  (C) adaptive-importance-sampling MPPI (Asmar et al. ICRA'23) — adapts distribution,
+  not count, not compute-driven.
+- [x] **References verified against primary sources** — `paper/references.bib` created
+  (was listed as "started" but never committed; built from scratch). Notable: "Enrico,
+  Mancini & Capello" confirmed as real surnames (Enrico is the first author's surname).
+  Pant et al. TCST'21 author list verified from the paper PDF itself. Remaining
+  TODO-pages/TODO-verify flags recorded inside the .bib (Minařík + Asmar page numbers,
+  Maggio co-author spellings, Enrico first names).
+- [x] **Language correction applied throughout:** "to the best of our knowledge" framing,
+  no absolute novelty claims.
+- [x] **Framing finalized against Phase 2 data:** positioning paragraph ties the threads
+  to the measured results (Pareto-predicted quality across regimes; deadline adherence as
+  the weakly-hard-motivated metric where adaptation shows value; safety fallback motivated
+  by consecutive-miss models).
 
-**Estimated time: 2–3 days, spread across Phase 0/2 timeline.**
+**Actual time: <1 day.**
 
 ---
 
