@@ -38,6 +38,21 @@ public:
     this->declare_parameter<bool>("use_scheduler", true);
     use_scheduler_ = this->get_parameter("use_scheduler").as_bool();
 
+    // Fixed-mode sample count. 400 is the conventional baseline (FIXED400);
+    // 330 is the predetermined equivalent-budget control condition (CONST330,
+    // locked a priori from Phase 0's preliminary adaptive average of 329.77 --
+    // see PROJECT_PLAN.md "Constant-N baseline"). Ignored when use_scheduler=true.
+    this->declare_parameter<int>("fixed_n", 400);
+    fixed_baseline_n_ = static_cast<int>(this->get_parameter("fixed_n").as_int());
+
+    if (use_scheduler_) {
+      mode_label_ = "ADAPTIVE";
+    } else if (fixed_baseline_n_ == 400) {
+      mode_label_ = "FIXED400";
+    } else {
+      mode_label_ = "CONST" + std::to_string(fixed_baseline_n_);
+    }
+
     waypoints_ = {
       {0.0, 0.0, 5.0},
       {2.0, 0.0, 5.0},
@@ -79,8 +94,9 @@ public:
     timer_ = this->create_wall_timer(
       50ms, std::bind(&OffboardNode::timerCallback, this));
 
-    RCLCPP_INFO(this->get_logger(), "offboard_node started, mode=%s",
-      use_scheduler_ ? "ADAPTIVE (AnytimeScheduler)" : "FIXED (N=400 baseline)");
+    RCLCPP_INFO(this->get_logger(), "offboard_node started, mode=%s%s",
+      mode_label_.c_str(),
+      use_scheduler_ ? " (AnytimeScheduler)" : "");
   }
 
   ~OffboardNode()
@@ -168,14 +184,7 @@ private:
         ground_position_.y(),
         ground_position_.z() + t * (hover_altitude_ - ground_position_.z()));
 
-      if (t >= 1.0) {
-          taking_off_ = false;
-          waiting_for_offboard_ = true;
 
-          RCLCPP_INFO(
-              this->get_logger(),
-              "Takeoff ramp complete. Waiting for OFFBOARD mode and arming before starting MPPI.");
-      }
       return target;
     }
 
@@ -213,7 +222,7 @@ private:
 
     csv_file_ << std::fixed << std::setprecision(6)
                << now.seconds() << ","
-               << (use_scheduler_ ? "ADAPTIVE" : "FIXED") << ","
+               << mode_label_ << ","
                << phase << ","
                << n << ","
                << mppi_call_ms << ","
@@ -287,13 +296,28 @@ private:
     Eigen::Vector3d target = computeTarget();
     Eigen::Vector3d cmd_vel;
 
+        // Transition from takeoff to waiting state.
     if (taking_off_) {
+      double elapsed = (now - takeoff_start_time_).seconds();
+
+      if (elapsed >= takeoff_duration_) {
+        taking_off_ = false;
+        waiting_for_offboard_ = true;
+
+        RCLCPP_INFO(
+          this->get_logger(),
+          "Takeoff ramp complete. Waiting for OFFBOARD mode and arming before starting MPPI.");
+      }
+    }
+
+    if (taking_off_ || waiting_for_offboard_) {
       cmd_vel = Eigen::Vector3d(0.0, 0.0,
         mppi_controller::math_utils::clamp(
           (target.z() - drone_state_.position.z()) * 1.0, -1.0, 1.0));
 
       publishVelocity(cmd_vel);
-      writeCsvRow(now, "TAKEOFF", 0, 0.0, target, 0);
+      writeCsvRow(now, taking_off_ ? "TAKEOFF" : "WAITING", 0, 0.0, target, 0);
+      
 
     } else {
       // ---- MPPI call: adaptive N (scheduler) or fixed N (baseline) ----
@@ -325,7 +349,7 @@ private:
       if (call_count_ % 20 == 0) {
         RCLCPP_INFO(this->get_logger(),
           "[%s] N=%d call_time=%.2fms next_N=%d deadline_misses_so_far=%d",
-          use_scheduler_ ? "ADAPTIVE" : "FIXED",
+          mode_label_.c_str(),
           used_n, call_duration_ms,
           use_scheduler_ ? next_n_ : used_n,
           deadline_miss_count_);
@@ -400,6 +424,7 @@ private:
 
   bool use_scheduler_ = true;
   int fixed_baseline_n_ = 400;
+  std::string mode_label_ = "ADAPTIVE";
   int deadline_miss_count_ = 0;
 
   bool taking_off_ = true;

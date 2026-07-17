@@ -171,13 +171,14 @@ Deadline misses:               17 (1.6%)
 **Transient vs. steady-state (important framing, from visual inspection of the tracking-error
 plot):** the whole-trajectory RMS of 1.03m is substantially inflated by an initial ~3.4m
 transient error during the first ~12-15 seconds — the physical distance between the vehicle's
-arming location and the first active MPPI target. After this transient resolves (t > 15s),
-steady-state tracking error is visibly under 0.15m. **A proper steady-state-only RMS
-calculation is a planned Phase 2 analysis step** (see PROJECT_PLAN.md); until that script
-exists, treat "steady-state <0.15m" as a visual observation from the plot, not yet a computed
-statistic.
+arming location and the first active MPPI target. After this transient resolves, steady-state
+tracking error is visibly under 0.15m. **Steady state is defined algorithmically** (per review
+— no hardcoded time cutoff): it begins at the first run of 10 consecutive TRACKING cycles with
+position error < 0.5m. `scripts/analyze_trials.py` implements this and computes both
+whole-trajectory and steady-state-only RMS for every trial.
 
-**Scheduler responsiveness (qualitative observation supporting H4):** around t≈30s in this log,
+**Scheduler responsiveness (qualitative observation — a Scheduler Validation metric, not a
+hypothesis; see PROJECT_PLAN.md § Scheduler Validation):** around t≈30s in this log,
 MPPI call time spikes toward the 50ms deadline; the scheduler visibly drops N from ~400 toward
 ~170-280 within 1-2 cycles, call time recovers to ~20-25ms, and N climbs back toward 400 shortly
 after. This is a clear qualitative example of the intended adaptive mechanism, though it occurs
@@ -217,7 +218,10 @@ upper bound on overhead, not a fully isolated measurement.
 8. **SITL only, to date.** HITL validation via UCL planned but not started.
 9. **No constant-N control condition yet** — current comparisons only span "fully adaptive" vs
    "always N=400," which cannot by itself distinguish "adaptation helps" from "any lower budget
-   would have sufficed." Addressed by Phase 2's added constant-N condition.
+   would have sufficed." Addressed by Phase 2's added constant-N condition, **predetermined at
+   N=330** (locked a priori from Phase 0's preliminary adaptive average of 329.77, so the
+   baseline does not depend on the Phase 2 results it is compared against — see
+   PROJECT_PLAN.md § Constant-N baseline).
 
 ### Threats to Validity (new section, per review)
 - **Internal validity:** stochastic MPPI sampling introduces inherent run-to-run variance;
@@ -236,15 +240,18 @@ upper bound on overhead, not a fully isolated measurement.
 
 ## 8. Contribution Statement (working draft)
 
+*(Sharpened per review — "we bridge this gap" replaced with an explicit problem formulation.)*
+
 *"While prior work has established that MPPI's sample count is a critical parameter constrained
 by available compute, existing UAV deployments treat this as a fixed, offline-tuned design
 choice. Separately, real-time control-scheduling co-design has developed principled frameworks
 for adapting controller behavior under variable compute, but these target deterministic or
-linear control formulations, not sampling-based stochastic optimal control. We bridge this gap
-by treating MPPI's sample count as a runtime-adaptive control variable, informed by a measured
-per-cycle compute cost estimate, with an explicit deadline-satisfaction objective and safety
-fallback mechanism. [Once the Pareto-informed refinement is implemented: ...further informed by
-an empirically characterized quality-compute trade-off.]"*
+linear control formulations, not sampling-based stochastic optimal control. **We formulate
+runtime MPPI sample-count selection as an online computational resource allocation problem,
+using measured per-cycle execution time to adapt computational effort while maintaining
+closed-loop control deadlines**, with an explicit safety fallback mechanism. [Once the
+Pareto-informed refinement is implemented: ...further informed by an empirically characterized
+quality-compute trade-off.]"*
 
 ---
 
@@ -253,12 +260,23 @@ an empirically characterized quality-compute trade-off.]"*
 - Repository: `mppi_controller` ROS2 package (private GitHub, tagged commits at major
   milestones).
 - Build: `colcon build --packages-select mppi_controller`.
-- Fly: `ros2 run mppi_controller offboard_node` (adaptive, default) or
-  `--ros-args -p use_scheduler:=false` (fixed).
+- Fly: `ros2 run mppi_controller offboard_node` (adaptive, default);
+  `--ros-args -p use_scheduler:=false` (fixed N=400);
+  `--ros-args -p use_scheduler:=false -p fixed_n:=330` (predetermined constant-N control
+  condition). The CSV `mode` column records ADAPTIVE / FIXED400 / CONST330 accordingly.
 - Pareto sweep: `ros2 run mppi_controller test_n_quality_sweep` (standalone, no ROS2/Gazebo).
 - Stress test: run `offboard_node`, then in a separate terminal once flight is stable,
   `ros2 run mppi_controller cpu_load_generator <threads> <duration_sec>`.
-- Logs: `/tmp/mppi_flight_log_*.csv`. Plot: `python3 scripts/plot_flight_log.py <csv files...>`.
+- **Automated Phase 2 trials:** `python3 scripts/run_trial.py --condition
+  {adaptive|const330|fixed400} --trials <k>` — launches the node, fires the 32-thread/30s
+  load at a fixed offset after tracking begins, collects CSVs into `results/<condition>/`,
+  lands and disarms between trials. Requires PX4 SITL + Gazebo + MAVROS already running.
+- **Trial-set analysis:** `python3 scripts/analyze_trials.py results/` — per-trial and
+  aggregate stats (whole + steady-state RMS via the algorithmic definition, deadline misses,
+  ΔN chatter metrics), Welch/Mann-Whitney tests, scheduler-validation metrics, and aggregate
+  figures.
+- Logs: `/tmp/mppi_flight_log_*.csv`. Single-run plot: `python3 scripts/plot_flight_log.py
+  <csv files...>`.
 - CSV columns (current): `epoch_sec, mode, phase, N, mppi_call_ms,
   state_to_command_latency_ms, pos_x, pos_y, pos_z, target_x, target_y, target_z, pos_error_m,
   deadline_miss`.

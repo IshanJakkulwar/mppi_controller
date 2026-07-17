@@ -20,9 +20,17 @@ The ROS2 node never performs control math; it only subscribes, publishes, and ca
 
 ## Run
 
-    ros2 run mppi_controller offboard_node
+    ros2 run mppi_controller offboard_node                                             # adaptive
+    ros2 run mppi_controller offboard_node --ros-args -p use_scheduler:=false          # fixed N=400
+    ros2 run mppi_controller offboard_node --ros-args -p use_scheduler:=false -p fixed_n:=330  # constant-N control
 
 Requires PX4 SITL + Gazebo Harmonic + MAVROS already running.
+
+Automated Phase 2 trials + analysis (see PROJECT_PLAN.md). Run from this package's root
+(`~/mppi_research_ws/src/mppi_controller`) so `results/` lands inside the repo:
+
+    python3 scripts/run_trial.py --condition adaptive --trials 3
+    python3 scripts/analyze_trials.py results/
 
 ## Package layout
 

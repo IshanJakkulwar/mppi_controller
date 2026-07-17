@@ -15,28 +15,44 @@
 
 ## Hypotheses
 
+*All hypotheses compare controllers. Verification of the scheduler's own implementation
+behaviour is not a hypothesis — see § Scheduler Validation below.*
+
 - **H1:** Adaptive MPPI produces fewer deadline misses than fixed-N=400 MPPI under sustained
   CPU contention.
 - **H2:** Adaptive MPPI's tracking error (RMS, steady-state) is not significantly worse than
   fixed-N=400's.
 - **H3:** Adaptive MPPI's average sample count is measurably lower than 400 under contention.
-- **H4:** The scheduler's sample count responds proportionally and promptly to changes in
-  measured per-cycle compute cost (visible as N dropping within 1-2 cycles of a call-time spike
-  and recovering within a few cycles of load easing).
-- **H5 (new, addresses RQ4):** Adaptive MPPI outperforms (fewer deadline misses and/or better
-  tracking) a *constant*-N controller fixed at adaptive's own observed average N, under the
-  same variable-load conditions. This isolates "adaptation helps" from "a lower fixed budget
-  would have been enough all along."
+- **H4 (addresses RQ4):** Adaptive MPPI outperforms (fewer deadline misses and/or better
+  tracking) a *constant*-N controller fixed at **N=330** (see § Constant-N baseline for why
+  this value is predetermined), under the same variable-load conditions. This isolates
+  "adaptation helps" from "a lower fixed budget would have been enough all along."
+
+## Scheduler Validation (engineering metrics, not hypotheses)
+
+*(Restructured per review: "scheduler responds within 1-2 cycles" verifies implementation
+behaviour, so it is reported as engineering validation, not as a scientific hypothesis.)*
+Reported from adaptive-condition trials, around the controlled load window:
+
+- **Response latency:** cycles between a measured call-time spike and the resulting drop in N
+  (expected: 1-2 cycles, matching the smoothing window of 3).
+- **Recovery time:** cycles from load easing until N returns near its pre-load level.
+- **Maximum overshoot/undershoot:** how far N transiently over-corrects during transitions.
+- **Stability (chatter):** ΔN_t = N_t − N_{t−1}; report **mean |ΔN|** and **variance of N**,
+  plus a ΔN distribution figure. A scheduler oscillating e.g. 400→150→400→150 technically
+  meets deadlines but is unstable — the ΔN distribution answers "does the scheduler chatter?"
+  directly.
 
 ## Success Criteria
 
 - Deadline misses: adaptive < fixed, under matched load conditions.
 - Tracking error: adaptive not significantly worse than fixed (statistical test, not eyeballing).
 - Average N: adaptive measurably below n_max under contention.
-- Adaptive outperforms constant-N-at-adaptive-average (H5) on at least one of deadline misses
-  or tracking error.
+- Adaptive outperforms constant-N=330 (H4) on at least one of deadline misses or tracking error.
 - Control loop frequency (20Hz nominal) maintained without sustained degradation in all
   conditions tested.
+- Scheduler validation metrics within expected ranges (response ≤ ~2 cycles, no sustained
+  chatter in the ΔN distribution).
 
 ---
 
@@ -100,17 +116,22 @@ before Phase 2 trials begin at scale.
 catches logging/script problems early rather than after 18 wasted trials.**
 
 ### Phase 2A — Pilot (small, fast, catches problems)
-- [ ] Run 3x adaptive, 3x fixed (N=400), same 32-thread/30s load profile as the confirmed
-  single-trial result.
-- [ ] **Also run 3x constant-N-at-adaptive-average** (H5 / RQ4 condition — see below).
+Run order per review: **Adaptive → Constant-330 → Fixed-400.** (With N=330 predetermined —
+see § Constant-N baseline — the order no longer matters scientifically; kept as workflow
+hygiene.)
+- [ ] Run 3x adaptive, 3x constant-N=330, 3x fixed (N=400), same 32-thread/30s load profile
+  as the confirmed single-trial result, load window at a fixed offset after tracking begins.
 - [ ] Manually inspect all 9 resulting CSVs and plots. Confirm: correct phase gating, no
   crashes, no missing rows, no clock/timestamp anomalies, sensible N/latency/error ranges.
+- [ ] Sanity-check that adaptive's average N in the pilot lands reasonably near 330 — if it
+  is wildly different (e.g. <250 or >390), document why before Phase 2B (the constant stays
+  330 regardless; it is predetermined and does not get re-tuned to Phase 2 results).
 - [ ] Fix anything broken here before proceeding — this is the checkpoint the review
   specifically recommended.
 
 ### Phase 2B — Full trial set
-- [ ] Run remaining trials to reach 10-20x per condition (adaptive, fixed N=400, constant-N-
-  at-adaptive-average) — three conditions total, not two.
+- [ ] Run remaining trials to reach 10-20x per condition (adaptive, constant N=330, fixed
+  N=400) — three conditions total, not two.
 - [ ] Same load profile throughout for the primary comparison; see Phase 2B-extended below for
   the second stress condition.
 - [ ] **Phase 2B-extended:** repeat the three-condition comparison under a second stress
@@ -121,6 +142,11 @@ catches logging/script problems early rather than after 18 wasted trials.**
 - [ ] Compute mean/stddev across trials for: deadline misses, RMS tracking error (both
   whole-trajectory and **steady-state-only**, see § Transient/Steady-State Reporting below),
   mean N, mean MPPI call time, mean state-to-command latency.
+- [ ] **Scheduler stability metrics (per review):** ΔN_t = N_t − N_{t−1}; report mean |ΔN|
+  and variance of N per adaptive trial, plus a ΔN distribution figure. Answers "does the
+  scheduler chatter?" — see § Scheduler Validation.
+- [ ] **Scheduler validation metrics** (response latency, recovery time, overshoot) extracted
+  from the controlled load window of adaptive trials — see § Scheduler Validation.
 - [ ] Run an appropriate statistical test (e.g. Welch's t-test or Mann-Whitney U, given likely
   non-normal small-sample distributions) comparing adaptive vs fixed and adaptive vs
   constant-N, for both deadline-miss count and RMS error.
@@ -132,26 +158,37 @@ catches logging/script problems early rather than after 18 wasted trials.**
 **Estimated time: 7–12 days total across 2A/2B/2C.** Budget slack here — this remains the
 highest schedule-risk phase.
 
-### New addition: Constant-N baseline (addresses RQ4 / H5)
-Per review: in addition to Fixed (N=400) and Adaptive, add a third condition — **Fixed at a
-constant N equal to adaptive's own observed average** (currently ≈330-367 depending on run;
-finalize the exact constant once Phase 2A's adaptive pilot runs give a stable average). This
-directly tests whether the *scheduler itself* is doing useful work, or whether a fixed lower
-budget would have suffficed all along. If adaptive still shows fewer deadline misses and/or
-better tracking than this constant-N condition under the same variable load, that is strong,
+### Constant-N baseline (addresses RQ4 / H4) — value PREDETERMINED
+In addition to Fixed (N=400) and Adaptive, a third condition: **constant N = 330**.
+
+**The value is fixed a priori, before any Phase 2 trial runs** (per review): 330 ≈ the
+adaptive scheduler's measured average N (329.77, computed from 31 real log samples) during the
+Phase 0 preliminary stress-test experiment. Deriving the constant from Phase 2's own adaptive
+runs would make the baseline depend on the result it is being compared against, inviting the
+criticism that the baseline was tuned after seeing results. It is locked at 330 now and does
+not change regardless of what average N Phase 2's adaptive runs produce.
+
+This condition directly tests whether the *scheduler itself* is doing useful work, or whether
+a fixed lower budget would have sufficed all along. If adaptive still shows fewer deadline
+misses and/or better tracking than constant-330 under the same variable load, that is strong,
 specific evidence for the adaptation mechanism itself — not just for "use less compute."
 
-### Transient vs. Steady-State Reporting (new, from latest flight analysis)
+### Transient vs. Steady-State Reporting — algorithmic definition
 The most recent confirmed flight (see PROJECT_OVERVIEW.md § 6) showed whole-trajectory RMS of
-1.03m, but steady-state (t > 15s, after the initial ~3.4m takeoff-to-first-target transient
-resolves) RMS is visibly under 0.15m from the plot. **Report both numbers going forward**, not
-just whole-trajectory RMS — the transient is a real, explainable phenomenon (physical distance
-between arming location and first active waypoint) and splitting it out prevents a reviewer
-mistakenly reading 1.03m as steady-state tracking quality.
-- [ ] Write a small script/analysis step (extending `plot_flight_log.py` or a new script) that
-  computes steady-state-only RMS by excluding an initial transient window (e.g. first 15s, or
-  more robustly, everything before tracking error first drops below some threshold like 0.5m
-  and stays there).
+1.03m, inflated by the initial takeoff-to-first-target transient; steady-state error after the
+transient is visibly under 0.15m. **Report both numbers going forward** — the transient is a
+real, explainable phenomenon (physical distance between arming location and first active
+waypoint) and splitting it out prevents a reviewer mistakenly reading 1.03m as steady-state
+tracking quality.
+
+**Steady-state is defined algorithmically, not by a hardcoded time cutoff** (per review — "the
+first 15 seconds" would be criticised as arbitrary):
+
+> Steady state begins at the first control cycle of the first run of **10 consecutive
+> TRACKING-phase cycles** (0.5s at 20Hz) in which position error **e(t) < 0.5m**.
+
+Applied uniformly to every trial in every condition by `scripts/analyze_trials.py`.
+- [x] Analysis script implementing this definition (`scripts/analyze_trials.py`).
 
 ---
 
@@ -223,9 +260,14 @@ optimistic-to-middle case. Phase 2 (now with a third condition and staged rollou
 remain the biggest schedule risks. Keep Phase 4 fallback options genuinely live.
 
 ## Immediate Next Actions (in order)
-1. Confirm the automated run script exists and works (top blocker for Phase 2 at scale).
-2. Finalize the constant-N value to test (based on adaptive's average across a few pilot runs).
-3. Run Phase 2A (3x each of adaptive / fixed / constant-N) — inspect everything before scaling up.
-4. Write the steady-state-RMS filtering analysis (small, high-value, addresses a real reviewer
-   question about the 1.03m whole-trajectory RMS number).
+1. ~~Automated run script~~ — **DONE**: `scripts/run_trial.py` (single/batch trials, fixed
+   load-window offset, auto CSV collection into `results/<condition>/`).
+2. ~~Finalize constant-N value~~ — **DONE, predetermined**: N=330 (locked a priori from the
+   Phase 0 preliminary average of 329.77 — see § Constant-N baseline). `offboard_node` now
+   accepts a `fixed_n` parameter.
+3. ~~Steady-state-RMS analysis~~ — **DONE**: `scripts/analyze_trials.py` (algorithmic
+   steady-state definition, per-trial + aggregate stats, ΔN chatter metrics, statistical
+   tests, aggregate figures).
+4. Run Phase 2A (3x each: adaptive → constant-330 → fixed-400) — inspect everything before
+   scaling up.
 5. Proceed to Phase 2B once 2A is clean.
