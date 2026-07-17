@@ -268,9 +268,12 @@ quality-compute trade-off.]"*
 - Stress test: run `offboard_node`, then in a separate terminal once flight is stable,
   `ros2 run mppi_controller cpu_load_generator <threads> <duration_sec>`.
 - **Automated Phase 2 trials:** `python3 scripts/run_trial.py --condition
-  {adaptive|const330|fixed400} --trials <k>` — launches the node, fires the 32-thread/30s
-  load at a fixed offset after tracking begins, collects CSVs into `results/<condition>/`,
-  lands and disarms between trials. Requires PX4 SITL + Gazebo + MAVROS already running.
+  {adaptive|const330|fixed400} --trials <k>` — fires the 32-thread/30s load at a fixed offset
+  after tracking begins, collects CSVs into `results/<condition>/`, validates each trial
+  (circuit completion + steady-state) and auto-retries stalls. **Default `--restart-sim`
+  brings up and tears down a fresh PX4/Gazebo/MAVROS stack per trial** (independent, clean
+  initial condition — the Phase 2A fix; requires `--px4-dir`, default `~/PX4-Autopilot`).
+  `--no-restart` assumes a hand-launched sim (quick checks only; state can leak).
 - **Trial-set analysis:** `python3 scripts/analyze_trials.py results/` — per-trial and
   aggregate stats (whole + steady-state RMS via the algorithmic definition, deadline misses,
   ΔN chatter metrics), Welch/Mann-Whitney tests, scheduler-validation metrics, and aggregate

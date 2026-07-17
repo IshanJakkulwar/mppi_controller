@@ -115,19 +115,47 @@ before Phase 2 trials begin at scale.
 **Restructured into three explicit stages, rather than "run 10-20x" as a single block — this
 catches logging/script problems early rather than after 18 wasted trials.**
 
-### Phase 2A — Pilot (small, fast, catches problems)
+### Phase 2A — Pilot (small, fast, catches problems) — ✅ RUN 2026-07-17, PROBLEMS FOUND
 Run order per review: **Adaptive → Constant-330 → Fixed-400.** (With N=330 predetermined —
 see § Constant-N baseline — the order no longer matters scientifically; kept as workflow
 hygiene.)
-- [ ] Run 3x adaptive, 3x constant-N=330, 3x fixed (N=400), same 32-thread/30s load profile
-  as the confirmed single-trial result, load window at a fixed offset after tracking begins.
-- [ ] Manually inspect all 9 resulting CSVs and plots. Confirm: correct phase gating, no
-  crashes, no missing rows, no clock/timestamp anomalies, sensible N/latency/error ranges.
-- [ ] Sanity-check that adaptive's average N in the pilot lands reasonably near 330 — if it
-  is wildly different (e.g. <250 or >390), document why before Phase 2B (the constant stays
-  330 regardless; it is predetermined and does not get re-tuned to Phase 2 results).
-- [ ] Fix anything broken here before proceeding — this is the checkpoint the review
-  specifically recommended.
+- [x] Ran 3x adaptive, 3x constant-N=330, 3x fixed (N=400), 32-thread/30s load at t+20.
+- [x] Inspected all 9 CSVs. **Compute-side results clean and strong** (this is the checkpoint
+  working as intended):
+  - Deadline misses: adaptive ~14 avg vs const330 ~333 vs fixed400 ~302 (Welch p<0.001 both).
+  - Loop rate: adaptive holds 20.0 Hz; const330/fixed400 degrade to 17-18 Hz under load.
+  - Scheduler mechanism textbook: N drops within ~1 cycle of load onset, recovers within ~1
+    cycle of load end. tag: `phase2a-pilot`.
+- [x] **Problems found — tracking-quality comparison NOT usable from this pilot:**
+  1. **Between-trial reset failed:** 8 of 9 trials started at ~5m altitude (residual hover
+     from the previous trial), not a ground takeoff — the old AUTO.LAND+disarm-wait did not
+     actually land the vehicle.
+  2. **Inconsistent trajectory coverage:** trials flew 1/4 to 4/4 waypoints; within-condition
+     RMS ranged 0.43-2.20 m — noise, not signal.
+  3. **Intermittent stall:** some trials the drone wedged ~0.5m from a target and never
+     recovered, persisting even after the load ended (e.g. adaptive_03 stuck for 100s despite
+     20Hz/0 misses). A persistent-after-load stall implies the sim/estimator got wedged.
+- [x] **Fix decided & implemented (before Phase 2B):**
+  - **Reset strategy = full PX4 SITL restart per trial** (`run_trial.py --restart-sim`, now
+    the default). Chosen because the stall persisted after load ended → the sim gets into a
+    bad state that an in-sim reset would inherit; only a clean process restart guarantees an
+    identical, uncontaminated initial condition and independent trials. Strongest answer to a
+    reviewer questioning trial independence. `--no-restart` kept as a fallback for quick
+    single checks against a hand-launched sim.
+  - **Validity guard + auto-retry:** each trial's CSV is checked for circuit completion +
+    steady-state; a stalled trial is flagged invalid and re-run (up to `--max-retries`), so
+    intermittent stalls never silently pollute the dataset. Verified against the pilot CSVs —
+    it flags exactly the 5 confounded trials and passes the 4 clean ones.
+  - **Open construct-validity item:** 32 busy-wait threads may starve Gazebo/PX4 itself (not
+    just the MPPI compute), possibly causing the stalls and partly confounding "fixed does
+    worse." Revisit load level / core-pinning if restart+guard doesn't yield clean tracking.
+  - **Note:** the waypoint circuit completes in ~10-15s then hovers at (0,0); with load at
+    t+20 the contention lands during hover-hold, not active trajectory-following. Valid test
+    of steady-state hold under load; drop `--load-offset` to ~3-5s if active-tracking stress
+    is wanted instead.
+- [ ] **NEXT: supervised shakedown of `--restart-sim`** (I can't test the PX4/Gazebo
+  lifecycle) — run 1 trial watching it bring up / tear down the stack cleanly, then a fresh
+  3x3 pilot, before scaling to 2B.
 
 ### Phase 2B — Full trial set
 - [ ] Run remaining trials to reach 10-20x per condition (adaptive, constant N=330, fixed
