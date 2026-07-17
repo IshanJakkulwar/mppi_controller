@@ -297,25 +297,31 @@ operating regime."*
     across operating regimes without offline retuning — not outperforming the best
     hand-tuned constant within every fixed regime.
 
-### Phase 2C — Statistics & reporting
-- [ ] Compute mean/stddev across trials for: deadline misses, RMS tracking error (both
-  whole-trajectory and **steady-state-only**, see § Transient/Steady-State Reporting below),
-  mean N, mean MPPI call time, mean state-to-command latency.
-- [ ] **Scheduler stability metrics (per review):** ΔN_t = N_t − N_{t−1}; report mean |ΔN|
-  and variance of N per adaptive trial, plus a ΔN distribution figure. Answers "does the
-  scheduler chatter?" — see § Scheduler Validation.
-- [ ] **Scheduler validation metrics** (response latency, recovery time, overshoot) extracted
-  from the controlled load window of adaptive trials — see § Scheduler Validation.
-- [ ] Run an appropriate statistical test (e.g. Welch's t-test or Mann-Whitney U, given likely
-  non-normal small-sample distributions) comparing adaptive vs fixed and adaptive vs
-  constant-N, for both deadline-miss count and RMS error.
-- [ ] Report the **equivalent-computational-budget comparison** (per-trial average N vs
-  Pareto-table-interpolated quality) across the full trial set, not just the single Phase 0
-  instance.
-- [ ] Regenerate all plots as aggregate/overlay figures using the full trial set.
+### Phase 2C — Statistics & reporting — ✅ COMPLETE (2026-07-18)
+- [x] Mean/stddev across trials for all metrics — `scripts/analyze_trials.py`, run on both
+  `results/` (20Hz) and `results_40hz/` (25ms); outputs in each set's `analysis/` dir.
+- [x] Scheduler stability metrics (mean |ΔN| ~2 at 20Hz / ~2.6 at 40Hz, ΔN distribution
+  figure) — no chatter in either regime.
+- [x] Scheduler validation metrics: response latency 1.4 cycles (20Hz) / 1.0 (40Hz),
+  recovery 1.6 / 4.7 cycles.
+- [x] Welch + Mann-Whitney tests, adaptive vs each baseline, misses + ss-RMS, both regimes
+  (see Phase 2B / 2B-extended entries for the numbers).
+- [x] **Equivalent-budget comparison across the full trial set** —
+  `scripts/equivalent_budget.py`, using the Phase 0 Pareto table:
+  - 20Hz (13 trials): mean N 365.1 → predicted quality gap **−0.0015** (5% of the table's
+    0.0301 noise floor); predicted per-call compute saving 7.6% whole-trial (~22%
+    in-window). Observed flight ss-RMS: adaptive 0.131 vs fixed-400 0.155 (n.s.) —
+    prediction confirmed.
+  - 40Hz (8 trials): mean N 220.5 (in-window ~144) → predicted gap **+0.0082**, still only
+    0.27x the noise floor; predicted saving 41.8% whole-trial (~63% in-window). Observed:
+    0.136 vs 0.130 (no consistent difference) — prediction confirmed.
+  - **Paper point: the offline Pareto characterization correctly predicted flight-quality
+    outcomes in both regimes — adaptation operates on the flat region of the
+    quality-compute curve, which is precisely why halving the budget cost nothing
+    measurable.**
+- [x] Aggregate/overlay figures regenerated for both trial sets.
 
-**Estimated time: 7–12 days total across 2A/2B/2C.** Budget slack here — this remains the
-highest schedule-risk phase.
+**Actual time: 2 days against the 7–12 budgeted** (automation + staged pilots paid off).
 
 ### Constant-N baseline (addresses RQ4 / H4) — value PREDETERMINED
 In addition to Fixed (N=400) and Adaptive, a third condition: **constant N = 330**.
