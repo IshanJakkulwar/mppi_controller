@@ -240,7 +240,7 @@ relying on machine-wide oversubscription.
   on this platform, no fair-share load level can push const330 over the deadline — CPU
   contention saturates at ~1.4x per-sample inflation (6/10/mem-thrash threads all
   equivalent; next step, 1-core pin, destabilizes flight). The OS scheduler (CFS/EEVDF)
-  structurally shields periodic control tasks from fair-share contention. Combined with the
+  shields periodic control tasks from fair-share contention in our measurements. Combined with the
   Pareto curve's flatness beyond N≈200, **no 20Hz experiment on this platform can separate
   adaptive from const330 in either direction** — motivating the deadline-scarcity condition
   below rather than further load escalation.
@@ -277,6 +277,25 @@ operating regime."*
   SITL tracking accuracy; say exactly that. Adaptive-vs-fixed400 ss-RMS tests disagree
   (Welch p=0.90, MWU p=0.01; n=8 rank artifact) — report both, claim no consistent
   difference. Data: `results_40hz/`, commit 41eb7a2.
+- [x] **Paper wording for the 40Hz results (locked, per external review):**
+  - **Opening sentence of the 40Hz discussion:** *"The constant budget tuned at 20 Hz does
+    not transfer to the tighter timing regime — it misses ~30% of all control cycles —
+    while the adaptive scheduler re-regulates to the new budget automatically."*
+  - **Never write "zero misses."** Write *"essentially zero deadline misses (0.75 ± 0.71
+    per trial)"* or *"fewer than one missed deadline per trial on average."* The single
+    calibration trial's literal 0/1200 may be cited only as that single trial.
+  - **Never write "structurally cannot" (or similar theoretical-impossibility language)
+    about the constant baselines.** The demonstrated claim is experimental: *"the constant
+    tuned for one operating regime did not transfer to the tighter timing regime without
+    retuning."*
+  - **The generalization claim, stated precisely:** *"a single fixed budget works when
+    tuned for one operating regime but does not generalize across operating regimes
+    without retuning"* — not "N=330 is wrong" and not "adaptive beats every baseline."
+  - **The three-sentence story arc for the Discussion:** 20 Hz: adaptive ≈ tuned constant
+    > untuned constant. 40 Hz: adaptive adapts automatically; the previously tuned
+    constant no longer satisfies the timing requirements. Value of adaptation: robustness
+    across operating regimes without offline retuning — not outperforming the best
+    hand-tuned constant within every fixed regime.
 
 ### Phase 2C — Statistics & reporting
 - [ ] Compute mean/stddev across trials for: deadline misses, RMS tracking error (both
