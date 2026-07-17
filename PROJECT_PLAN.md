@@ -201,8 +201,19 @@ peak; adaptive → 0 misses, call regulated at 30.0ms, N 399→301 (min 270), re
 window; equal tracking quality; both flights valid.** This also upgrades construct
 validity: the pinned envelope directly models the target deployment class instead of
 relying on machine-wide oversubscription.
-- [ ] **NEXT: fresh 3x3 pilot under the calibrated condition** (defaults — plain
-  `run_trial.py --condition X --trials 3`), then scale to 2B.
+- [x] **Fresh 3x3 pilot under the calibrated condition — ✅ PASSED (2026-07-17).** All 9
+  trials valid (ground takeoffs, 4/4 circuits, 20.0 Hz, steady-state reached). Per-condition
+  (mean ± std across 3 trials): adaptive **0 misses**, in-window call locked at 30.0ms,
+  in-window N ≈ 300-302, ss-RMS 0.108±0.006; const330 0.67±1.15 misses, 32.8ms, ss-RMS
+  0.115±0.010; fixed400 **20.0±6.2 misses**, 40.6ms, ss-RMS 0.105±0.008. Even at n=3,
+  adaptive-vs-fixed on misses reaches Welch p=0.031; tracking quality statistically
+  indistinguishable across conditions (H2 as desired). No scheduler chatter (mean |ΔN| ≈ 2).
+  **Honest H4 note:** at this contention level the matched constant budget (330) also
+  rarely misses — adaptive's advantage over const330 here is quality headroom (mean N 366 vs
+  330: full 400 samples whenever load is absent, at equal deadline safety), not miss count.
+  H4's miss-count comparison likely needs the 2B-extended second (heavier) condition, where
+  a constant tuned to one contention level becomes insufficient — that is the actual
+  argument for adaptation. → **GO for Phase 2B.**
 
 ### Phase 2B — Full trial set
 - [ ] Run remaining trials to reach 10-20x per condition (adaptive, constant N=330, fixed
