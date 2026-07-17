@@ -224,11 +224,18 @@ relying on machine-wide oversubscription.
   |ΔN| ~2 (no chatter).
 - [x] **H4 vs const330: statistical tie at 20Hz (0.15 vs 0.23 misses, RMS equal) — accepted
   and reframed, not hidden.** Under the tested condition a well-chosen constant matches
-  adaptation. Reframed contribution (per external review, honest framing): (1) decisive
-  win over the conventional fixed-N=400 deployment; (2) adaptation *discovered online* the
-  equivalent budget that otherwise requires an offline Pareto sweep + stress calibration to
-  find; (3) the RMS tie *confirms* Phase 0's equivalent-budget interpolation prediction;
-  (4) cross-regime robustness is the constant's real weakness — see 2B-extended.
+  adaptation. Reframed contribution (per external review — lead with robustness, not
+  "discovery"): **adaptive provides robust performance without offline tuning.** The
+  constant baseline requires an offline engineer to run a Pareto sweep and stress
+  calibration, then hard-code the result for one operating regime; adaptive needs none of
+  that and transfers when conditions change. Supporting points: (1) decisive win over the
+  conventional fixed-N=400 deployment; (2) parity with the carefully-tuned offline
+  baseline exactly where that baseline is expected to perform well; (3) the RMS tie
+  *confirms* Phase 0's equivalent-budget interpolation prediction; (4) transfer across
+  timing regimes without retuning — see 2B-extended. **Wording caution for the paper:
+  never phrase the 40Hz result as "const330 is bad/fails" — the claim is "const330 is
+  tuned for one operating regime and does not transfer to a tighter timing regime without
+  retuning, whereas adaptive transfers automatically."**
 - [x] **Load-saturation finding (report in paper, likely Limitations/Discussion):** at 20Hz
   on this platform, no fair-share load level can push const330 over the deadline — CPU
   contention saturates at ~1.4x per-sample inflation (6/10/mem-thrash threads all
@@ -244,10 +251,14 @@ stress condition before any Phase 2 data existed; reduced loop rate is the one e
 **Framing discipline (per external review): this is a separate, clearly-labeled secondary
 experiment about deadline scarcity — same trajectory, same controller code, same load
 profile, same everything except the control period (40Hz / 25ms deadline vs 20Hz / 50ms).
-Designed as a fair test, reported whatever the outcome.** Justification for the regime:
-the target deployment class (Jetson-class companion computers) is several times slower per
-sample than the dev machine — 25ms here is a proxy for embedded compute-to-deadline
-ratios, which is what the scheduler's ratio-based law actually responds to.
+Designed as a fair test, reported whatever the outcome. Paper narrative: "the experimental
+plan included a second operating regime (reduced control period) to evaluate whether the
+conclusions generalize across timing constraints" — NOT "since H4 tied, we ran 40Hz."**
+Justification wording (kept deliberately modest — do NOT claim "40Hz on this i7 is
+equivalent to 20Hz on a Jetson"; that would require benchmarking the Jetson): *"a reduced
+control period represents a tighter real-time constraint; such constraints are expected on
+lower-performance embedded processors, motivating evaluation under this additional
+operating regime."*
 - [x] Node gains a `loop_rate_hz` parameter (deadline = loop period; scheduler budget =
   0.6 x period, unchanged law). `run_trial.py --loop-hz`. Load generator gains a `mem`
   mode (64MB/thread cache-thrash; kept for completeness — saturates like spin at 20Hz).
