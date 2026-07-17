@@ -268,10 +268,15 @@ operating regime."*
   N 252 idle → 143 in-window, **0 in-window misses**, full 40.0Hz. Both flights valid,
   tracking equal. Adaptive discovered a different budget for a different deadline with
   zero retuning — the cross-regime claim now has data at both regimes.
-- [ ] **NEXT: 8 trials per condition @40Hz** into `results_40hz/` (separate dir — mode
-  labels don't encode loop rate, so keep regimes in separate directories):
-  `run_trial.py --condition {adaptive|const330|fixed400} --trials 8 --loop-hz 40`
-  then `analyze_trials.py results_40hz/`.
+- [x] **8 trials per condition @40Hz — ✅ DONE (2026-07-18), decisive.** All 24 valid.
+  Adaptive 0.75±0.71 misses/trial (call regulated at 14.98ms = 0.6×25ms, mean N 220.5);
+  const330 1048.9±5.2 misses (30.5% of all cycles); fixed400 876.5±7.6 (26.9%). Adaptive
+  vs both on misses: Welch p<0.0001, MWU p=0.0008. Response latency 1.0 cycle. **Honest
+  reporting notes:** const330's tracking stays good (ss-RMS 0.095m, best of three) — the
+  cost of misses is the broken real-time contract + degraded effective rate (38.2Hz), not
+  SITL tracking accuracy; say exactly that. Adaptive-vs-fixed400 ss-RMS tests disagree
+  (Welch p=0.90, MWU p=0.01; n=8 rank artifact) — report both, claim no consistent
+  difference. Data: `results_40hz/`, commit 41eb7a2.
 
 ### Phase 2C — Statistics & reporting
 - [ ] Compute mean/stddev across trials for: deadline misses, RMS tracking error (both
