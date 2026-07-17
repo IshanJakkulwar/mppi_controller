@@ -348,8 +348,18 @@ def validate_csv(path):
 # One trial (node + load + collect), sim assumed up
 # --------------------------------------------------------------------------
 def run_node_trial(args, dest_path):
-    node_cmd = (["ros2", "run", "mppi_controller", "offboard_node",
-                 "--ros-args"] + CONDITIONS[args.condition])
+    # Optional CPU pinning: restrict the controller node AND the load
+    # generator to the same core set (taskset), emulating an embedded
+    # companion computer's compute envelope (e.g. a 4-6 core Jetson). On a
+    # 16-hw-thread dev machine, unpinned busy-wait load never breaches the
+    # deadline -- CFS's sleeper fairness protects the periodic MPPI thread
+    # regardless of thread count (verified: 32 and 64 threads both left
+    # fixed-N=400 at ~37ms, zero in-window misses). PX4/Gazebo/MAVROS stay
+    # unpinned (conceptually a separate machine).
+    pin = ["taskset", "-c", args.cpuset] if args.cpuset else []
+
+    node_cmd = (pin + ["ros2", "run", "mppi_controller", "offboard_node",
+                       "--ros-args"] + CONDITIONS[args.condition])
     print(f"  Launching node: {' '.join(node_cmd)}")
     node = popen_group(node_cmd, prefix="node")
     monitor = LineMonitor(node, "node")
@@ -360,13 +370,14 @@ def run_node_trial(args, dest_path):
                 f"Node did not reach TRACKING within {args.arm_timeout}s")
         t_start = time.time()
         print(f"  Tracking started. Load window: t+{args.load_offset}s for "
-              f"{args.load_duration}s ({args.load_threads} threads).")
+              f"{args.load_duration}s ({args.load_threads} threads"
+              + (f", cpuset {args.cpuset}" if args.cpuset else "") + ").")
 
         time.sleep(args.load_offset)
         print("  Starting CPU load generator...")
         load = popen_group(
-            ["ros2", "run", "mppi_controller", "cpu_load_generator",
-             str(args.load_threads), str(args.load_duration)],
+            pin + ["ros2", "run", "mppi_controller", "cpu_load_generator",
+                   str(args.load_threads), str(args.load_duration)],
             prefix="load", stdout_file=os.devnull)
 
         remaining = args.tracking_duration - (time.time() - t_start)
@@ -479,8 +490,18 @@ def main():
                         action="store_false",
                         help="assume the sim is already running")
 
-    # load window
-    parser.add_argument("--load-threads", type=int, default=32)
+    # load window -- defaults are the CALIBRATED stress condition (see
+    # PROJECT_PLAN.md "Stress-condition calibration"): controller + load
+    # pinned to 2 cores (embedded-class envelope), 6 busy threads. On this
+    # 16-hw-thread machine, unpinned load of any size never breaches the
+    # deadline (CFS/EEVDF shields the periodic MPPI thread), and 1 core
+    # destabilizes flight entirely; 2 cores / 6 threads yields fixed-N=400
+    # call times of ~40ms mean / ~53ms peak with a ~4% in-window miss rate
+    # while flight remains valid.
+    parser.add_argument("--cpuset", default="0-1",
+                        help="pin node+load to these cores (emulates "
+                             "embedded compute envelope); '' disables")
+    parser.add_argument("--load-threads", type=int, default=6)
     parser.add_argument("--load-duration", type=int, default=30)
     parser.add_argument("--load-offset", type=int, default=20,
                         help="seconds after tracking start to begin the load")

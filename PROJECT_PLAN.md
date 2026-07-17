@@ -165,8 +165,44 @@ hygiene.)
   connection probe via `ros2 topic echo` was unreliable (CLI discovery-cache miss while
   MAVROS was in fact connected) — replaced with the authoritative "Got HEARTBEAT" marker in
   the captured MAVROS log. Ctrl-C/exit now always runs sim cleanup.
-- [ ] **NEXT: fresh 3x3 pilot via `--restart-sim`** (results/ wiped of the confounded pilot
-  first, or kept side-by-side), then scale to 2B.
+- [x] **Fresh 3x3 pilot via `--restart-sim` — RUN 2026-07-17, structurally clean, but load
+  found toothless in a clean environment.** All 9 trials valid: ground takeoffs, full 4/4
+  circuits, 20.0 Hz throughout, tracking converged (<0.12m end error), 0-2 deadline misses
+  per trial in EVERY condition. The 32-thread load raised fixed-400 call time only from
+  ~28ms to ~37ms — under the 50ms deadline, so H1 had nothing to compare. Conclusion: the
+  old pilot's ~300 misses/trial were an artifact of the degraded long-running sim
+  environment, not the load itself. Archived as `results_pilot_unpinned32thr/` — retained
+  as the no-deadline-pressure control observation (adaptive: ~25% less compute at equal
+  tracking, regulated at exactly 30.0ms = its 0.6x50ms design target; answers RQ3 even
+  without misses).
+
+### Stress-condition calibration — DONE, condition PREDETERMINED (2026-07-17)
+Root cause of the toothless load: the Linux scheduler (CFS/EEVDF) shields a periodic
+control thread from fair-share busy-wait contention whenever core headroom exists — thread
+count alone cannot induce deadline pressure on a 16-hw-thread machine. Calibration ladder
+(single fixed-N=400 trials, fresh sim each; affinity propagation through `ros2 run`
+verified):
+
+| Load config                  | call time in window | in-window misses | flight       |
+|------------------------------|---------------------|------------------|--------------|
+| 32 threads, unpinned         | ~37ms               | 0%               | valid        |
+| 64 threads, unpinned         | ~37ms               | 0%               | valid        |
+| 4 cores pinned, 16 threads   | ~36ms               | 0%               | valid        |
+| 1 core pinned, 4 threads     | —                   | —                | DESTABILIZED |
+| 2 cores pinned, 4 threads    | 43ms mean / 53 peak | 3%               | valid        |
+| **2 cores pinned, 6 threads**| 41ms mean / 52 peak | 4%               | valid        |
+
+**Locked stress condition for Phase 2 (now `run_trial.py`'s defaults): controller node +
+load generator pinned to 2 cores (`taskset -c 0-1`, emulating an embedded-class compute
+envelope, cf. Jetson-class companion computers), 6 busy-wait threads, 30s window at t+20s.**
+PX4/Gazebo/MAVROS stay unpinned (conceptually a separate machine). Head-to-head validation
+under this exact condition: **fixed-400 → 22 in-window misses (4%), call 40.5ms mean/52.9
+peak; adaptive → 0 misses, call regulated at 30.0ms, N 399→301 (min 270), recovery after
+window; equal tracking quality; both flights valid.** This also upgrades construct
+validity: the pinned envelope directly models the target deployment class instead of
+relying on machine-wide oversubscription.
+- [ ] **NEXT: fresh 3x3 pilot under the calibrated condition** (defaults — plain
+  `run_trial.py --condition X --trials 3`), then scale to 2B.
 
 ### Phase 2B — Full trial set
 - [ ] Run remaining trials to reach 10-20x per condition (adaptive, constant N=330, fixed
@@ -211,6 +247,12 @@ This condition directly tests whether the *scheduler itself* is doing useful wor
 a fixed lower budget would have sufficed all along. If adaptive still shows fewer deadline
 misses and/or better tracking than constant-330 under the same variable load, that is strong,
 specific evidence for the adaptation mechanism itself — not just for "use less compute."
+
+**N=330 remains locked after the stress-condition recalibration** (§ Stress-condition
+calibration). Under the calibrated condition adaptive's in-window average was ~301 and its
+idle level ~400, so 330 still sits squarely in the equivalent-budget band; re-deriving it
+from new adaptive runs would reintroduce exactly the post-hoc-tuning criticism the lock
+exists to prevent. Report adaptive's actual per-trial average alongside, for transparency.
 
 ### Transient vs. Steady-State Reporting — algorithmic definition
 The most recent confirmed flight (see PROJECT_OVERVIEW.md § 6) showed whole-trajectory RMS of
