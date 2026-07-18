@@ -314,6 +314,14 @@ this?* **Interpretation rules locked before any trial runs:**
   bracketing the adaptive range, in-regime parity is either shared by all reasonable
   constants (supporting the flat-Pareto explanation) or specific to the tuned value.
 
+**OUTCOME (2026-07-19, 8 trials/regime, all valid):** const200 @20Hz: 0.25±0.46 misses,
+tracking within noise → in-regime parity is shared by all reasonable constants, as the
+flat-Pareto + shielding explanation predicts. const200 @40Hz: **122.3±6.9 misses/trial
+(3.5%)** vs adaptive 0.75±0.71 (Welch p<1e-3, MWU Holm-adj 0.0049, LOO-robust) — even the
+elbow-level constant breaks at the tighter deadline; failure scales with budget size
+(200→3.5%, 330→30.5%, 400→26.9%). First pre-registered branch fired: strengthens the
+transfer claim. Integrated into paper Tables I/II and Results text.
+
 ### Phase 2C — Statistics & reporting — ✅ COMPLETE (2026-07-18)
 - [x] Mean/stddev across trials for all metrics — `scripts/analyze_trials.py`, run on both
   `results/` (20Hz) and `results_40hz/` (25ms); outputs in each set's `analysis/` dir.

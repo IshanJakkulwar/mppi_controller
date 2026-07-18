@@ -423,9 +423,9 @@ $\geq$10\% budget reduction) and recovery time. Between-condition
 comparisons use Welch's $t$-test and the Mann--Whitney $U$ test on
 per-trial statistics, with Holm correction across the reported family of
 comparisons and a leave-one-out sensitivity analysis for every pairwise
-test (reported wherever the two test types disagree).
-\todo{refresh Holm-adjusted values once the const-200 arm joins the
-reported family}
+test (reported wherever the two test types disagree). All headline
+deadline-miss results survive Holm correction ($p < 0.005$ adjusted);
+all in-regime null results remain null (adjusted $p \approx 1$).
 
 % =========================================================================
 \section{Results}
@@ -437,22 +437,22 @@ reported family}
 Table~\ref{tab:20hz} summarizes the primary comparison.
 
 \begin{table}[t]
-\caption{Primary regime (20\,Hz, 50\,ms deadline), mean $\pm$ std over
-$n{=}13$ trials per condition. Load window: cores 0--1, 6 threads,
-30\,s.}
+\caption{Primary regime (20\,Hz, 50\,ms deadline), mean $\pm$ std;
+$n{=}13$ per condition ($n{=}8$ for Constant-200, added post-review
+under pre-registered interpretation rules). Load window: cores 0--1, 6
+threads, 30\,s.}
 \label{tab:20hz}
 \centering
-\begin{tabular}{lccc}
+\begin{tabular}{lcccc}
 \toprule
- & Adaptive & Constant-330 & Fixed-400 \\
+ & Adaptive & Const-200 & Const-330 & Fixed-400 \\
 \midrule
-Deadline misses      & $0.15 \pm 0.38$  & $0.23 \pm 0.60$  & $18.0 \pm 4.1$ \\
-Miss rate            & $0.0\%$          & $0.0\%$          & $1.0\%$ \\
-SS-RMS error [m]     & $0.131 \pm 0.055$& $0.135 \pm 0.051$& $0.155 \pm 0.071$ \\
-Mean $N$             & $365.1$          & $330$            & $400$ \\
-Mean call [ms]       & $27.9$           & $27.1$           & $31.4$ \\
-In-window call [ms]  & $30.0$           & $32.8$           & $40.6$ \\
-$\overline{|\Delta N|}$ & $2.0$         & $0$              & $0$ \\
+Deadline misses      & $0.15 \pm 0.38$  & $0.25 \pm 0.46$ & $0.23 \pm 0.60$  & $18.0 \pm 4.1$ \\
+Miss rate            & $0.0\%$          & $0.0\%$         & $0.0\%$          & $1.0\%$ \\
+SS-RMS [m]           & $0.131 \pm 0.055$& $0.156 \pm 0.093$ & $0.135 \pm 0.051$& $0.155 \pm 0.071$ \\
+Mean $N$             & $365.1$          & $200$           & $330$            & $400$ \\
+In-window call [ms]  & $30.0$           & $23.0$          & $32.8$           & $40.6$ \\
+$\overline{|\Delta N|}$ & $2.0$         & $0$             & $0$              & $0$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -468,13 +468,20 @@ $N_{\max}$ within cycles of load release.
 \todo{Figure: 20\,Hz overlay time series (N, call time, error), three
 conditions.}
 
-\emph{Adaptive vs.\ Constant-330.} Under the tested condition, the
-predetermined constant budget performed equivalently to adaptation on
-both deadline misses ($p = 0.70$) and tracking error ($p = 0.83$): a
+\emph{Adaptive vs.\ the constant budgets.} Under the tested condition,
+the predetermined constant budget performed equivalently to adaptation
+on both deadline misses ($p = 0.70$) and tracking error ($p = 0.83$;
+all in-regime constant comparisons have Holm-adjusted $p \approx 1$): a
 well-chosen constant matches adaptation \emph{in the regime it is tuned
-for}. Sec.~\ref{sec:discussion} discusses why this is expected on our
-platform, and Sec.~\ref{sec:results:40hz} shows what the constant cannot
-do.
+for}. To test whether a much smaller budget would also have sufficed, a
+Constant-200 arm (near the Pareto elbow) was added after external
+review, with interpretation rules pre-registered before any trial ran:
+at 20\,Hz it, too, is indistinguishable from adaptation
+($0.25 \pm 0.46$ misses; tracking within noise) --- in this regime,
+\emph{every} reasonable constant ties, exactly as the flat Pareto
+region and OS-scheduler shielding predict. Sec.~\ref{sec:discussion}
+discusses why, and Sec.~\ref{sec:results:40hz} shows what no constant
+can do.
 
 \emph{Scheduler validation.} Across adaptive trials the scheduler
 responded to per-sample cost spikes within $1.4$ cycles on average and
@@ -497,15 +504,15 @@ $n{=}8$ trials per condition. Identical trajectory, code, and load
 profile as Table~\ref{tab:20hz}.}
 \label{tab:40hz}
 \centering
-\begin{tabular}{lccc}
+\begin{tabular}{lcccc}
 \toprule
- & Adaptive & Constant-330 & Fixed-400 \\
+ & Adaptive & Const-200 & Const-330 & Fixed-400 \\
 \midrule
-Deadline misses  & $0.75 \pm 0.71$ & $1048.9 \pm 5.2$ & $876.5 \pm 7.6$ \\
-Miss rate        & $0.0\%$         & $30.5\%$         & $26.9\%$ \\
-SS-RMS error [m] & $0.136 \pm 0.127$ & $0.095 \pm 0.005$ & $0.130 \pm 0.045$ \\
-Mean $N$         & $220.5$         & $330$            & $400$ \\
-Mean call [ms]   & $15.0$          & $22.0$           & $26.3$ \\
+Deadline misses  & $0.75 \pm 0.71$ & $122.3 \pm 6.9$ & $1048.9 \pm 5.2$ & $876.5 \pm 7.6$ \\
+Miss rate        & $0.0\%$         & $3.5\%$         & $30.5\%$         & $26.9\%$ \\
+SS-RMS [m]       & $0.136 \pm 0.127$ & $0.137 \pm 0.120$ & $0.095 \pm 0.005$ & $0.130 \pm 0.045$ \\
+Mean $N$         & $220.5$         & $200$           & $330$            & $400$ \\
+Mean call [ms]   & $15.0$          & $16.2$          & $22.0$           & $26.3$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -514,8 +521,14 @@ With zero configuration change, the adaptive controller discovered a
 different budget for the different deadline --- $N \approx 252$ idle,
 $\approx 143$ under load --- pinning call time at $15.0$\,ms
 ($= \beta T$) and maintaining essentially zero deadline misses
-($0.75 \pm 0.71$ per trial; vs.\ both constants: Welch $p < 10^{-3}$,
-Mann--Whitney $p < 10^{-3}$) at the full 40\,Hz rate. The constant
+($0.75 \pm 0.71$ per trial; vs.\ every constant: Welch $p < 10^{-3}$,
+Mann--Whitney Holm-adjusted $p < 0.005$, leave-one-out robust) at the
+full 40\,Hz rate. The failure of the constants scales with their size:
+even the elbow-level Constant-200 --- which matched adaptation
+perfectly at 20\,Hz --- misses $122.3 \pm 6.9$ cycles per trial
+(3.5\%) here, while Constant-330 and Fixed-400 miss 30.5\% and 26.9\%
+respectively. Every fixed budget embeds a regime assumption; only the
+size of the violation differs. The constant
 conditions remained flyable --- Constant-330's steady-state tracking was
 in fact the best of the three --- but violated the real-time contract on
 roughly every third cycle, degrading the effective control rate to
@@ -526,8 +539,8 @@ Fixed-400, the mean-based and rank-based tests disagree (Welch
 $p = 0.90$; Mann--Whitney $p = 0.01$), and a leave-one-out sensitivity
 analysis resolves the disagreement: the rank result is robust to
 removing any single trial (Mann--Whitney $p \in [0.0003, 0.021]$ over
-all leave-one-out subsets), while Welch is not
-($p \in [0.047, 0.97]$). The per-trial data explain why: adaptive's
+all leave-one-out subsets; Holm-adjusted $p = 0.031$), while Welch is
+not ($p \in [0.047, 0.97]$). The per-trial data explain why: adaptive's
 seven non-outlier trials (0.081--0.097\,m) all track better than every
 Fixed-400 non-outlier trial (0.098--0.126\,m; medians 0.093 vs.\
 0.116\,m), and a single adaptive outlier trial (0.451\,m, still a valid
