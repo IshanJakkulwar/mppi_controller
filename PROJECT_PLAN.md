@@ -393,15 +393,16 @@ Applied uniformly to every trial in every condition by `scripts/analyze_trials.p
 
 ---
 
-## Phase 4 — HITL via UCL — NOT STARTED
-*(Unchanged from prior plan — see PROJECT_OVERVIEW.md for architecture/context. Summary:)*
-- [ ] Confirm rig specs (real Pixhawk/Jetson vs simulated physics; MAVROS vs native DDS).
-- [ ] Port `offboard_node`, retune scheduler bounds for real hardware compute profile.
-- [ ] Re-run core comparison (adaptive / fixed / constant-N) on HITL — confirmatory scope if
-  time is short, full statistical rigor if time allows.
-
-**Estimated time: 10–16 days.** Highest schedule risk. Fallback options (SITL-only submission
-vs thin HITL confirmatory results) remain live — decide once Phase 2 is complete.
+## Phase 4 — HITL via UCL — PLANNED IN FULL, NOT STARTED
+**Complete execution plan: `HITL_PLAN.md`** (written 2026-07-18, before starting) — board
+triage for the reportedly-dud Pixhawk 6C, wiring (3-wire FTDI on TELEM2 + USB HIL link),
+firmware/params, Gazebo Classic HITL (new Gazebo/Harmonic does NOT support HITL — key
+constraint), jMAVSim smoke-test path, MAVROS serial vs UDP trade-off, `--hitl` runner
+changes, confirmatory experiment schedule (2x pilot → 5x/condition @20Hz, optional 3x
+@40Hz), Pixhawk 2.4.8/FMUv2-vs-v3 fallback analysis, pre-answered gotchas.
+**Estimated time: 3.5–4.5 days** (down from 10–16 via automation reuse). Confirmatory
+scope; SITL-only submission fallback stays live by design. Blocked on: UCL access + 6C
+triage outcome.
 
 ---
 
