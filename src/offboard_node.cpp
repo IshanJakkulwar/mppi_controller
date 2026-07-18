@@ -66,7 +66,16 @@ public:
     inject_stall_ms_ = static_cast<int>(this->get_parameter("inject_stall_ms").as_int());
     inject_stall_cycles_ = static_cast<int>(this->get_parameter("inject_stall_cycles").as_int());
 
-    if (use_scheduler_) {
+    // Pareto-informed quality floor for the scheduler (0 = pure deadline
+    // law, the Phase 2 primary configuration). 150 = elbow-derived floor
+    // for the ADAPTIVEQF ablation arm (pre-registered Phase 0 refinement).
+    this->declare_parameter<int>("quality_floor_n", 0);
+    quality_floor_n_ = static_cast<int>(
+      this->get_parameter("quality_floor_n").as_int());
+
+    if (use_scheduler_ && quality_floor_n_ > 0) {
+      mode_label_ = "ADAPTIVEQF";
+    } else if (use_scheduler_) {
       mode_label_ = "ADAPTIVE";
     } else if (fixed_baseline_n_ == 400) {
       mode_label_ = "FIXED400";
@@ -117,7 +126,11 @@ public:
       std::bind(&OffboardNode::timerCallback, this));
 
     // Scheduler must target the actual loop period, not the 20Hz default.
-    scheduler_ = AnytimeScheduler(makeSchedulerConfig(loop_period_sec_));
+    {
+      SchedulerConfig sched_config = makeSchedulerConfig(loop_period_sec_);
+      sched_config.n_quality_floor = quality_floor_n_;
+      scheduler_ = AnytimeScheduler(sched_config);
+    }
 
     RCLCPP_INFO(this->get_logger(),
       "offboard_node started, mode=%s%s, loop=%.0fHz (deadline %.1fms)",
@@ -479,6 +492,7 @@ private:
   double inject_stall_t_sec_ = -1.0;
   int inject_stall_ms_ = 60;
   int inject_stall_cycles_ = 3;
+  int quality_floor_n_ = 0;
   rclcpp::Time tracking_start_time_{0, 0, RCL_ROS_TIME};
 
   bool taking_off_ = true;

@@ -46,6 +46,17 @@ int AnytimeScheduler::recommendNextSampleCount(
   int recommended_n = static_cast<int>(budget / avg_time_per_sample);
   recommended_n = math_utils::clamp(recommended_n, config_.n_min, config_.n_max);
 
+  // Pareto-informed quality floor (see SchedulerConfig). Applies only when
+  // the deadline law wants to go below the floor AND the floor is still
+  // affordable within the full control period; otherwise the deadline law
+  // wins and the consecutive-miss detector is the escape hatch.
+  if (config_.n_quality_floor > 0 &&
+      recommended_n < config_.n_quality_floor &&
+      config_.n_quality_floor * avg_time_per_sample <= config_.target_loop_time)
+  {
+    recommended_n = config_.n_quality_floor;
+  }
+
   return recommended_n;
 }
 

@@ -54,9 +54,11 @@ SS_CONSECUTIVE = 10
 
 DEADLINE_MS = 50.0
 
-CONDITION_ORDER = ["ADAPTIVE", "CONST200", "CONST330", "FIXED400"]
-CONDITION_COLORS = {"ADAPTIVE": "tab:blue", "CONST200": "tab:red",
-                    "CONST330": "tab:orange", "FIXED400": "tab:green"}
+CONDITION_ORDER = ["ADAPTIVE", "ADAPTIVEQF", "CONST200", "CONST330",
+                   "FIXED400"]
+CONDITION_COLORS = {"ADAPTIVE": "tab:blue", "ADAPTIVEQF": "tab:purple",
+                    "CONST200": "tab:red", "CONST330": "tab:orange",
+                    "FIXED400": "tab:green"}
 
 
 def collect_csv_files(paths):
@@ -288,7 +290,7 @@ def print_stats_tests(by_condition):
         return
     adaptive = by_condition["ADAPTIVE"]
     rows = []
-    for baseline in ["CONST200", "CONST330", "FIXED400"]:
+    for baseline in ["ADAPTIVEQF", "CONST200", "CONST330", "FIXED400"]:
         if baseline not in by_condition:
             continue
         base = by_condition[baseline]

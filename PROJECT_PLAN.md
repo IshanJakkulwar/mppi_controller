@@ -388,6 +388,69 @@ Applied uniformly to every trial in every condition by `scripts/analyze_trials.p
 
 ---
 
+## Novelty upgrade — Pareto-informed quality-floor scheduler (ADAPTIVEQF ablation)
+**Decided 2026-07-19 after external "improve the novelty?" review. Full context recorded
+here deliberately (chat context may not survive).**
+
+### Why this, and why now
+External review assessed three novelty-upgrade options: (1) quality-floor-aware scheduler,
+(2) second sampler class (CEM) to make the actuator claim class-level, (3) closed-loop
+stability theorem. Verdicts: **(1) EXECUTE NOW** — it is the pre-registered Phase 0
+refinement ("Pareto-informed refinement… deferred to a later Phase 2 ablation condition",
+written before ANY Phase 2 data), so it is not post-hoc novelty-chasing; it is additive
+(new ablation arm only — baselines and all existing adaptive data stay untouched and
+valid); and it is cheap (~1 day code, ~16 unattended trials), NOT the 1–2 weeks the
+external review estimated, because it did not know the infrastructure. It converts paper
+contribution 2 from "we characterized a curve that explains our results" to "we fed the
+curve back into the controller."
+**(2) CEM/second-sampler: CHECKPOINT ITEM — highlighted for later.** The stronger novelty
+upgrade in principle (single-instance → class-level actuator claim: "sampling budgets of
+stochastic optimizers are a feedback-scheduling actuator class"), but new-controller-from-
+scratch risk. Rule: attempt ONLY if QF ablation + HITL both land with ≥3 weeks of runway
+remaining; otherwise it is the named resubmission upgrade. Do not start it in parallel.
+**(3) Theorem: REJECTED** for this submission — a rushed/hand-wavy proof damages a paper
+built on rigor. Only viable with a control-theory co-author driving it.
+
+### The law (implemented in AnytimeScheduler, `n_quality_floor` config; node param
+`quality_floor_n`; runner condition `adaptiveqf`; CSV mode label ADAPTIVEQF)
+Lexicographic priority: (1) deadline hard, (2) quality floor soft, (3) β-margin best
+effort. Concretely: base allocation N = clamp(⌊βT/τ̂⌋, N_min, N_max); if N < N_floor AND
+N_floor·τ̂ ≤ T (floor affordable within the FULL period, sacrificing margin not deadline)
+→ allocate N_floor; else the deadline law wins (floor yields) and the consecutive-miss
+fallback detector is the escape hatch. **N_floor = 150, DERIVED not chosen**: the smallest
+sweep N whose predicted quality is within one noise-floor σ of N_max (0.8187 ≤ 0.7893 +
+0.0301 = 0.8194; N=100 fails at 0.8393).
+
+### Pre-registered predictions (written BEFORE any ADAPTIVEQF trial ran — same discipline
+as the const-200 arm; publish whichever outcome occurs)
+- **20 Hz**: floor never binds (deadline law's minimum in-window allocation ≈300 ≫ 150).
+  ADAPTIVEQF statistically identical to ADAPTIVE on all metrics. Report straight.
+- **40 Hz under load**: floor BINDS — the deadline law sits at N≈143, just below 150; QF
+  holds 150; in-window call ≈15.7 ms (above the 15 ms β-budget, still ≪ 25 ms deadline);
+  0-ish misses; quality within noise. This is the "quality floor active, deadline still
+  satisfied" region — the margin is the resource being spent.
+- **True conflict** (deadline wants < floor AND floor breaks the deadline, i.e.
+  τ̂ > T/150 ≈ 0.167 ms/sample at 40 Hz): unreachable via natural contention on this
+  platform (saturation ~1.4×), reachable via fault injection — under an injected stall the
+  affordability test fails, the floor yields, and the detector fires: the complete
+  lexicographic story demonstrated end-to-end. Optional 1-2 fault-injection ADAPTIVEQF
+  trials to demonstrate (recommended).
+- If any prediction is wrong, that is a finding — report it, per house rules.
+
+### Execution
+- [x] Law implemented + built; ADAPTIVEQF label smoke-tested at 40 Hz.
+- [ ] 1 live smoke trial @40 Hz confirming the floor binds in-window (N pinned at 150).
+- [ ] Batches (user, unattended): `run_trial.py --condition adaptiveqf --trials 8` (20 Hz,
+  into results/) and `--trials 8 --loop-hz 40 --results-dir results_40hz`; optional
+  `--trials 2 --inject-stall 60,60,3 --results-dir results_fault_injection` for the
+  conflict demo. Then `analyze_trials.py` on both dirs (ADAPTIVEQF auto-included in
+  stats/plots as a baseline vs ADAPTIVE).
+- [ ] Paper integration: reshape contribution 2; scheduler section gets the lexicographic
+  law; results gain an ablation subsection; conclusion's future-work loses the "quality
+  floor" line (now done) and keeps CEM/class-level claim + theorem + HITL as the roadmap.
+- Sequencing per external review (agreed): HITL (Jetson+6C) runs in parallel weeks 2-4,
+  not sequentially.
+
 ## Phase 3 — Literature & Framing — ✅ DRAFT COMPLETE (2026-07-18)
 
 - [x] Initial lit search, gap identified.
