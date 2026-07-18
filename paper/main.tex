@@ -104,10 +104,11 @@ clamping and smoothing --- and requires no model of the contention source.
   principles~\cite{lu2002feedback,cervin2002feedback} to the sampling
   budget of a stochastic sampling-based optimal controller: a
   measured-execution-time budget law with a deadline-satisfaction
-  objective and a domain-specific safety fallback, the latter validated
-  in flight by fault injection (Sec.~\ref{sec:results:fault}). We claim
-  no novelty for the scheduling mechanism itself; the novelty lies in
-  the actuator and its consequences.
+  objective and a domain-specific safety-fallback detector, the latter
+  validated in flight by fault injection
+  (Sec.~\ref{sec:results:fault}). We claim no novelty for the
+  scheduling mechanism itself; the novelty lies in the actuator and its
+  consequences.
   \item An offline characterization of MPPI's quality--compute trade-off
   (a Pareto sweep over $N$) that both motivates the approach and, as we
   show, \emph{predicts} its closed-loop behavior: adaptation operates on
@@ -337,11 +338,16 @@ cycle.
 
 \emph{Safety fallback.} Independently of the smoothed estimate, the
 scheduler counts consecutive raw deadline overruns ($c_t > T$); at two
-consecutive misses it signals a fallback condition under which a simpler
-controller (e.g., the PID stage of our stack) can be substituted. The
-threshold of two avoids flapping on isolated timing spikes and is
-motivated by consecutive-miss weakly-hard stability
-analyses~\cite{maggio2020control}. Under the comparison conditions of
+consecutive misses it raises a fallback \emph{signal}. To be precise
+about scope: the mechanism implemented and validated in this paper is
+the detector --- trigger, signal, and automatic clearing on the next
+compliant cycle. Acting on the signal (e.g., substituting the PID stage
+of our stack for MPPI) is a system-integration policy that we specify
+but deliberately leave outside the control path, because the correct
+substitution policy is platform-dependent; no controller handoff occurs
+in any experiment reported here. The threshold of two avoids flapping
+on isolated timing spikes and is motivated by consecutive-miss
+weakly-hard stability analyses~\cite{maggio2020control}. Under the comparison conditions of
 Sec.~\ref{sec:results} the adaptive controller never triggered the
 fallback --- itself evidence of the budget law's margin adequacy --- so
 we validate the mechanism by fault injection: a synthetic compute stall,
@@ -476,8 +482,11 @@ $\overline{|\Delta N|}$ & $2.0$         & $0$             & $0$              & $
 \emph{Adaptive vs.\ Fixed-400.} The adaptive controller essentially
 eliminated deadline misses ($0.15 \pm 0.38$ vs.\ $18.0 \pm 4.1$ per
 trial; Welch $t = -15.5$, $p < 10^{-3}$; Mann--Whitney $U = 0$,
-$p < 10^{-3}$), while steady-state tracking error was statistically
-indistinguishable (Welch $p = 0.35$). During the load window the
+$p < 10^{-3}$; Cliff's $\delta = -1.00$, i.e.\ complete separation ---
+every adaptive trial had fewer misses than every Fixed-400 trial),
+while steady-state tracking error was statistically indistinguishable
+(Welch $p = 0.35$; $|\delta| \leq 0.30$ across all in-regime
+comparisons). During the load window the
 scheduler held call time at $30.0$\,ms --- exactly its target
 $\beta T$ --- by regulating $N$ to $\approx 300$, recovering to
 $N_{\max}$ within cycles of load release.
@@ -563,8 +572,8 @@ different budget for the different deadline --- $N \approx 252$ idle,
 $\approx 143$ under load --- pinning call time at $15.0$\,ms
 ($= \beta T$) and maintaining essentially zero deadline misses
 ($0.75 \pm 0.71$ per trial; vs.\ every constant: Welch $p < 10^{-3}$,
-Mann--Whitney Holm-adjusted $p < 0.005$, leave-one-out robust) at the
-full 40\,Hz rate. The failure of the constants scales with their size:
+Mann--Whitney Holm-adjusted $p < 0.005$, Cliff's $\delta = -1.00$
+against all three, leave-one-out robust) at the full 40\,Hz rate. The failure of the constants scales with their size:
 even the elbow-level Constant-200 --- which matched adaptation
 perfectly at 20\,Hz --- misses $122.3 \pm 6.9$ cycles per trial
 (3.5\%) here, while Constant-330 and Fixed-400 miss 30.5\% and 26.9\%
@@ -580,8 +589,8 @@ Fixed-400, the mean-based and rank-based tests disagree (Welch
 $p = 0.90$; Mann--Whitney $p = 0.01$), and a leave-one-out sensitivity
 analysis resolves the disagreement: the rank result is robust to
 removing any single trial (Mann--Whitney $p \in [0.0003, 0.021]$ over
-all leave-one-out subsets; Holm-adjusted $p = 0.031$), while Welch is
-not ($p \in [0.047, 0.97]$). The per-trial data explain why: adaptive's
+all leave-one-out subsets; Holm-adjusted $p = 0.031$; Cliff's
+$\delta = -0.75$), while Welch is not ($p \in [0.047, 0.97]$). The per-trial data explain why: adaptive's
 seven non-outlier trials (0.081--0.097\,m) all track better than every
 Fixed-400 non-outlier trial (0.098--0.126\,m; medians 0.093 vs.\
 0.116\,m), and a single adaptive outlier trial (0.451\,m, still a valid
@@ -604,24 +613,28 @@ above the deadline during contention.}
 \subsection{Safety-fallback validation by fault injection}
 \label{sec:results:fault}
 
-Because the budget law's margin prevented any fallback activation under
-the comparison conditions, we validated the fallback path directly: in
+Because the budget law's margin prevented any fallback signaling under
+the comparison conditions, we validated the detector directly: in
 two additional adaptive trials at 20\,Hz, a synthetic 60\,ms compute
 stall was injected inside the timed control path for a 3-cycle window
 at $t{=}60$\,s (well clear of the load window), yielding measured call
 times of 83--89\,ms against the 50\,ms deadline. In both trials the
 sequence unfolded identically: the first stalled cycle registered a
 deadline miss and the scheduler immediately cut the budget
-($N: 400 \to \approx 255$); the second consecutive miss triggered the
+($N: 400 \to \approx 255$); the second consecutive miss raised the
 fallback signal exactly at the specified threshold (logged and recorded
-in the cycle telemetry); the stall window then expired, the fallback
-condition cleared on the next compliant cycle, and the budget recovered
-to $N_{\max}$ within at most 10 cycles (0.5\,s). Peak tracking
-disturbance during and after the episode was 0.13\,m, and both flights
-completed the full circuit normally. The trigger, signal, and recovery
-path of the fallback mechanism thus behave as specified under a
-worst-case compute transient severe enough that no fair-share load on
-this platform could produce it. Fig.~\ref{fig:fault} shows one episode.
+in the cycle telemetry); the stall window then expired, the signal
+cleared on the next compliant cycle, and the budget recovered to
+$N_{\max}$ within at most 10 cycles (0.5\,s). To state the scope of
+this validation precisely: what is exercised is the \emph{detector} ---
+trigger, signal, and clearing. No controller handoff to PID occurred or
+was configured (Sec.~\ref{sec:scheduler}); the adaptive controller rode
+through the stall on its own, with peak tracking disturbance of 0.13\,m
+and both flights completing the circuit normally --- itself
+informative: for transients of this magnitude and duration, the budget
+cut alone suffices, and the signal exists for transients that persist.
+Validating a substitution \emph{policy} (when to hand off, and when to
+return) is future work. Fig.~\ref{fig:fault} shows one episode.
 
 \begin{figure}[t]
 \centering
@@ -737,7 +750,8 @@ the control timer.
 
 We treated MPPI's sample count as a runtime-adaptive control variable
 governed by a measured-execution-time budget law with a deadline
-objective and safety fallback, and validated it in staged, pre-registered
+objective and a safety-fallback detector, and validated it in staged,
+pre-registered
 SITL experiments against both the conventional fixed-maximum budget and a
 predetermined equivalent-budget constant, across two timing regimes. The
 adaptive controller essentially eliminated deadline misses under CPU
