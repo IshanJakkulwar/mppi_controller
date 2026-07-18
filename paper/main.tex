@@ -291,7 +291,18 @@ within the sweep's own seed-to-seed noise floor
 ($\sigma \approx 0.03$ in the sweep's units). The curve is thus steep
 below $N \approx 150$ and essentially flat above --- an
 \emph{anytime-friendly} shape: samples beyond the elbow are cheap to
-give up. \todo{Figure: Pareto sweep, mean $\pm$ std vs.\ $N$.}
+give up (Fig.~\ref{fig:pareto}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_pareto}
+\caption{Quality--compute trade-off of MPPI (10 seeds per $N$,
+standalone task): RMS tracking error (left axis, mean $\pm$ std) and
+per-call compute cost (right axis) versus sample count. The curve is
+steep below $N \approx 150$ and flat beyond; dotted lines mark the
+adaptive scheduler's mean operating points in the two regimes.}
+\label{fig:pareto}
+\end{figure}
 
 \subsection{Anytime scheduler}
 \label{sec:scheduler}
@@ -470,8 +481,17 @@ indistinguishable (Welch $p = 0.35$). During the load window the
 scheduler held call time at $30.0$\,ms --- exactly its target
 $\beta T$ --- by regulating $N$ to $\approx 300$, recovering to
 $N_{\max}$ within cycles of load release.
-\todo{Figure: 20\,Hz overlay time series (N, call time, error), three
-conditions.}
+Fig.~\ref{fig:overlay20} overlays all trials.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_overlay_20hz}
+\caption{Primary regime (20\,Hz): sample count, MPPI call time, and
+tracking error over time, all trials overlaid by condition. The load
+window (t+20--50\,s) is visible as the adaptive budget reduction and
+the Fixed-400 call-time excursion toward the 50\,ms deadline.}
+\label{fig:overlay20}
+\end{figure}
 
 \emph{Adaptive vs.\ the constant budgets.} Under the tested condition,
 the predetermined constant budget performed equivalently to adaptation
@@ -499,7 +519,17 @@ responded to per-sample cost spikes within $1.4$ cycles on average and
 recovered within $1.6$ cycles; $\overline{|\Delta N|} \approx 2$
 indicates no oscillatory chatter --- the variance of $N$ is dominated by
 the intended load-window step, not cycle-to-cycle oscillation.
-\todo{Figure: $\Delta N$ distribution per condition.}
+Fig.~\ref{fig:dn} shows the $\Delta N$ distributions.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_dn_hist}
+\caption{Cycle-to-cycle budget change $\Delta N_t$ for the adaptive
+scheduler in both regimes (log scale). Mass concentrates at small
+$|\Delta N|$; the tails correspond to the intended load-window
+transitions, not sustained oscillation.}
+\label{fig:dn}
+\end{figure}
 
 \subsection{Secondary regime: 40\,Hz (25\,ms deadline)}
 \label{sec:results:40hz}
@@ -559,7 +589,17 @@ flight) inflates the mean-based comparison. Typical (median) tracking
 under adaptation was thus, if anything, \emph{better} at the tighter
 deadline; we nevertheless claim only non-inferiority (H2), consistent
 with the primary regime.
-\todo{Figure: 40\,Hz overlay time series, three conditions.}
+Fig.~\ref{fig:overlay40} overlays all trials.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_overlay_40hz}
+\caption{Secondary regime (40\,Hz, 25\,ms deadline): the adaptive
+scheduler re-regulates to the tighter budget ($N \approx 252$ idle,
+$\approx 143$ under load) while every constant's call time sits at or
+above the deadline during contention.}
+\label{fig:overlay40}
+\end{figure}
 
 \subsection{Safety-fallback validation by fault injection}
 \label{sec:results:fault}
@@ -581,7 +621,17 @@ disturbance during and after the episode was 0.13\,m, and both flights
 completed the full circuit normally. The trigger, signal, and recovery
 path of the fallback mechanism thus behave as specified under a
 worst-case compute transient severe enough that no fair-share load on
-this platform could produce it.
+this platform could produce it. Fig.~\ref{fig:fault} shows one episode.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_fault}
+\caption{Fault-injection episode (trial 1): the injected stall drives
+call time to $\sim$89\,ms against the 50\,ms deadline; the first miss
+cuts the budget, the second consecutive miss raises the fallback signal
+(star), and the budget recovers to $N_{\max}$ within 0.5\,s.}
+\label{fig:fault}
+\end{figure}
 
 \subsection{Equivalent-budget analysis: the Pareto curve predicts flight}
 \label{sec:results:budget}

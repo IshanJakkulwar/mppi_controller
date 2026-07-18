@@ -447,11 +447,17 @@ Threats to Validity, Conclusion. TODOs marked inline: author block, 3 figures (P
 20Hz overlay, 40Hz overlay, ΔN distribution), bib page numbers.
 
 Remaining for submission:
-- [ ] Figures (publication-quality versions of the analysis plots; matplotlib → PDF).
-- [ ] Author block / acknowledgments.
-- [ ] Bib TODO-pages/TODO-verify flags (5 min against proceedings PDFs).
-- [ ] ECC page-limit pass + LaTeX compile check (no TeX on the dev machine — compile on
-  Overleaf or install texlive).
+- [x] Figures — DONE (2026-07-19): `scripts/paper_figures.py` → `paper/figures/` (Pareto,
+  20Hz overlay, 40Hz overlay, ΔN distribution, fault-injection episode), wired into
+  main.tex, visually inspected.
+- [ ] Author block / acknowledgments (user-only: affiliation, email, co-authors).
+- [x] Bib flags — DONE except one: all pages/authors verified against primary sources
+  (Minařík 13144-13151, Asmar 3182-3188, log-MPPI 10240-10247, Shield-MPPI 8(11):7106-7113,
+  Maggio confirmed from proceedings PDF, Tsallis authors from RSS site). Remaining:
+  williams2018robust (Tube-MPPI RSS'18) co-author tail — verify on Overleaf day.
+- [ ] ECC page-limit pass + LaTeX compile (no TeX + no sudo on dev machine — first compile
+  on Overleaf; static validation passed: envs/braces balanced, all refs/cites resolve,
+  all figures present, only remaining \todo is the author block).
 - [ ] Advisor read-through (Phase 6).
 
 ### Original Phase 5 checklist (superseded by the draft above)
