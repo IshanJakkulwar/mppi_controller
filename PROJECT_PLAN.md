@@ -1,5 +1,14 @@
 # Project Plan — Compute-Aware Anytime MPPI for UAV Control
-**Target: ICRA/ECC submission. Timeline: ~7 weeks remaining from this point.**
+**Target venue — DECISION RECORD (2026-07-19): ECC (deadline late October 2026, user to
+verify exact date) over ACC's joint L-CSS option (deadline 6 September 2026).** Reasoning:
+L-CSS is a theory-letters journal — the worst-fit reviewer pool for a paper whose stated
+contribution is application+rigor with explicitly no mechanism novelty; Sept 6 leaves zero
+slack for the Jetson HITL upgrade (the main strong-accept lever) and kills the CEM
+checkpoint; the venues are mutually exclusive and L-CSS decisions land after ECC's
+deadline, so ACC forfeits ECC 2027 entirely. If a journal-indexed publication is needed,
+the planned path is ECC now + an extended journal version (HITL + CEM results) to RA-L —
+fit-appropriate for experimental robotics — rather than a high-mismatch L-CSS bet.
+(ICRA excluded by user's schedule clashes.)
 
 ---
 
