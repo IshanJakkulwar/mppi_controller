@@ -1,5 +1,6 @@
 #include <chrono>
 #include <memory>
+#include <thread>
 #include <vector>
 #include <array>
 #include <fstream>
@@ -54,6 +55,17 @@ public:
     double loop_rate_hz = this->get_parameter("loop_rate_hz").as_double();
     loop_period_sec_ = 1.0 / loop_rate_hz;
 
+    // Fault injection for safety-fallback validation (off by default).
+    // inject_stall_t_sec >= 0 enables a synthetic compute stall of
+    // inject_stall_ms per cycle for inject_stall_cycles cycles, starting
+    // that many seconds after tracking begins.
+    this->declare_parameter<double>("inject_stall_t_sec", -1.0);
+    this->declare_parameter<int>("inject_stall_ms", 60);
+    this->declare_parameter<int>("inject_stall_cycles", 3);
+    inject_stall_t_sec_ = this->get_parameter("inject_stall_t_sec").as_double();
+    inject_stall_ms_ = static_cast<int>(this->get_parameter("inject_stall_ms").as_int());
+    inject_stall_cycles_ = static_cast<int>(this->get_parameter("inject_stall_cycles").as_int());
+
     if (use_scheduler_) {
       mode_label_ = "ADAPTIVE";
     } else if (fixed_baseline_n_ == 400) {
@@ -96,7 +108,7 @@ public:
     csv_file_.open(csv_path);
     csv_file_ << "epoch_sec,mode,phase,N,mppi_call_ms,state_to_command_latency_ms,"
                  "pos_x,pos_y,pos_z,target_x,target_y,target_z,pos_error_m,"
-                 "deadline_miss\n";
+                 "deadline_miss,fallback_active\n";
     RCLCPP_INFO(this->get_logger(), "Logging to: %s", csv_path.c_str());
     // --------------------------
 
@@ -249,7 +261,9 @@ private:
                << target.y() << ","
                << target.z() << ","
                << pos_error << ","
-               << deadline_miss << "\n";
+               << deadline_miss << ","
+               << ((use_scheduler_ && scheduler_.inSafetyFallback()) ? 1 : 0)
+               << "\n";
     csv_file_.flush();
   }
 
@@ -338,8 +352,28 @@ private:
       // ---- MPPI call: adaptive N (scheduler) or fixed N (baseline) ----
       int used_n = use_scheduler_ ? next_n_ : fixed_baseline_n_;
 
+      if (tracking_start_time_.nanoseconds() == 0) {
+        tracking_start_time_ = now;
+      }
+
       auto t0 = std::chrono::steady_clock::now();
       cmd_vel = mppi_.computeVelocityCommandWithN(drone_state_, target, used_n);
+
+      // Fault injection (safety-fallback validation): stall the compute
+      // path for inject_stall_cycles consecutive cycles starting at
+      // t = inject_stall_t_sec after tracking begins. The stall sits
+      // inside the timed section, so it is indistinguishable from a real
+      // compute transient to the scheduler and the deadline check.
+      if (inject_stall_t_sec_ >= 0.0) {
+        double t_track = (now - tracking_start_time_).seconds();
+        double t_end = inject_stall_t_sec_ +
+          inject_stall_cycles_ * loop_period_sec_;
+        if (t_track >= inject_stall_t_sec_ && t_track < t_end) {
+          std::this_thread::sleep_for(
+            std::chrono::milliseconds(inject_stall_ms_));
+        }
+      }
+
       auto t1 = std::chrono::steady_clock::now();
       double call_duration_sec = std::chrono::duration<double>(t1 - t0).count();
       double call_duration_ms = call_duration_sec * 1000.0;
@@ -442,6 +476,10 @@ private:
   std::string mode_label_ = "ADAPTIVE";
   double loop_period_sec_ = 0.05;
   int deadline_miss_count_ = 0;
+  double inject_stall_t_sec_ = -1.0;
+  int inject_stall_ms_ = 60;
+  int inject_stall_cycles_ = 3;
+  rclcpp::Time tracking_start_time_{0, 0, RCL_ROS_TIME};
 
   bool taking_off_ = true;
   bool waiting_for_offboard_ = false;

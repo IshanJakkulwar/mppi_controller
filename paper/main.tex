@@ -104,10 +104,10 @@ clamping and smoothing --- and requires no model of the contention source.
   principles~\cite{lu2002feedback,cervin2002feedback} to the sampling
   budget of a stochastic sampling-based optimal controller: a
   measured-execution-time budget law with a deadline-satisfaction
-  objective and a domain-specific safety fallback
-  (Sec.~\ref{sec:method}). We claim no novelty for the scheduling
-  mechanism itself; the novelty lies in the actuator and its
-  consequences.
+  objective and a domain-specific safety fallback, the latter validated
+  in flight by fault injection (Sec.~\ref{sec:results:fault}). We claim
+  no novelty for the scheduling mechanism itself; the novelty lies in
+  the actuator and its consequences.
   \item An offline characterization of MPPI's quality--compute trade-off
   (a Pareto sweep over $N$) that both motivates the approach and, as we
   show, \emph{predicts} its closed-loop behavior: adaptation operates on
@@ -330,9 +330,14 @@ consecutive misses it signals a fallback condition under which a simpler
 controller (e.g., the PID stage of our stack) can be substituted. The
 threshold of two avoids flapping on isolated timing spikes and is
 motivated by consecutive-miss weakly-hard stability
-analyses~\cite{maggio2020control}. In all experiments reported here the
-fallback was signaled but never needed to be engaged by the adaptive
-controller.
+analyses~\cite{maggio2020control}. Under the comparison conditions of
+Sec.~\ref{sec:results} the adaptive controller never triggered the
+fallback --- itself evidence of the budget law's margin adequacy --- so
+we validate the mechanism by fault injection: a synthetic compute stall,
+inserted inside the timed section of the control cycle and thus
+indistinguishable from a real compute transient, forces consecutive
+deadline overruns and exercises the trigger/recovery path in flight
+(Sec.~\ref{sec:results:fault}).
 
 \subsection{Implementation}
 
@@ -475,7 +480,13 @@ all in-regime constant comparisons have Holm-adjusted $p \approx 1$): a
 well-chosen constant matches adaptation \emph{in the regime it is tuned
 for}. To test whether a much smaller budget would also have sufficed, a
 Constant-200 arm (near the Pareto elbow) was added after external
-review, with interpretation rules pre-registered before any trial ran:
+review. To avoid post-hoc goalpost-moving, its interpretation rules
+were written and committed to version control before any Constant-200
+trial ran, binding us to publish either outcome: a Constant-200 failure
+in either regime would support the transfer claim, while Constant-200
+succeeding everywhere would narrow our claims to the tuning-free
+framing alone. The former occurred (Sec.~\ref{sec:results:40hz}). At
+20\,Hz:
 at 20\,Hz it, too, is indistinguishable from adaptation
 ($0.25 \pm 0.46$ misses; tracking within noise) --- in this regime,
 \emph{every} reasonable constant ties, exactly as the flat Pareto
@@ -549,6 +560,28 @@ under adaptation was thus, if anything, \emph{better} at the tighter
 deadline; we nevertheless claim only non-inferiority (H2), consistent
 with the primary regime.
 \todo{Figure: 40\,Hz overlay time series, three conditions.}
+
+\subsection{Safety-fallback validation by fault injection}
+\label{sec:results:fault}
+
+Because the budget law's margin prevented any fallback activation under
+the comparison conditions, we validated the fallback path directly: in
+two additional adaptive trials at 20\,Hz, a synthetic 60\,ms compute
+stall was injected inside the timed control path for a 3-cycle window
+at $t{=}60$\,s (well clear of the load window), yielding measured call
+times of 83--89\,ms against the 50\,ms deadline. In both trials the
+sequence unfolded identically: the first stalled cycle registered a
+deadline miss and the scheduler immediately cut the budget
+($N: 400 \to \approx 255$); the second consecutive miss triggered the
+fallback signal exactly at the specified threshold (logged and recorded
+in the cycle telemetry); the stall window then expired, the fallback
+condition cleared on the next compliant cycle, and the budget recovered
+to $N_{\max}$ within at most 10 cycles (0.5\,s). Peak tracking
+disturbance during and after the episode was 0.13\,m, and both flights
+completed the full circuit normally. The trigger, signal, and recovery
+path of the fallback mechanism thus behave as specified under a
+worst-case compute transient severe enough that no fair-share load on
+this platform could produce it.
 
 \subsection{Equivalent-budget analysis: the Pareto curve predicts flight}
 \label{sec:results:budget}

@@ -241,6 +241,13 @@ def _pairwise(a, b):
     return welch.statistic, welch.pvalue, mwu.statistic, mwu.pvalue
 
 
+def cliffs_delta(a, b):
+    """Cliff's delta effect size: P(a>b) - P(a<b), in [-1, 1]."""
+    gt = sum(1 for x in a for y in b if x > y)
+    lt = sum(1 for x in a for y in b if x < y)
+    return (gt - lt) / (len(a) * len(b))
+
+
 def _loo_range(a, b):
     """Leave-one-out sensitivity: (welch_p_min, welch_p_max, mwu_p_min,
     mwu_p_max) over all datasets with one trial removed (from either
@@ -304,7 +311,8 @@ def print_stats_tests(by_condition):
         baseline, label, a, b, wstat, wp, mstat, mp = r
         print(f"  ADAPTIVE vs {baseline} on {label}:")
         print(f"    Welch t={wstat:.3f} p={wp:.4f} (Holm-adj {wadj:.4f}) | "
-              f"Mann-Whitney U={mstat:.1f} p={mp:.4f} (Holm-adj {madj:.4f})")
+              f"Mann-Whitney U={mstat:.1f} p={mp:.4f} (Holm-adj {madj:.4f}) | "
+              f"Cliff's delta={cliffs_delta(a, b):+.2f}")
         wlo, whi, mlo, mhi = _loo_range(a, b)
         print(f"    leave-one-out sensitivity: Welch p in "
               f"[{wlo:.4f}, {whi:.4f}] | MWU p in [{mlo:.4f}, {mhi:.4f}]")

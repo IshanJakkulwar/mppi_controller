@@ -362,6 +362,11 @@ def run_node_trial(args, dest_path):
     node_cmd = (pin + ["ros2", "run", "mppi_controller", "offboard_node",
                        "--ros-args"] + CONDITIONS[args.condition]
                 + ["-p", f"loop_rate_hz:={args.loop_hz}"])
+    if args.inject_stall:
+        t_sec, ms, cycles = args.inject_stall.split(",")
+        node_cmd += ["-p", f"inject_stall_t_sec:={float(t_sec)}",
+                     "-p", f"inject_stall_ms:={int(ms)}",
+                     "-p", f"inject_stall_cycles:={int(cycles)}"]
     print(f"  Launching node: {' '.join(node_cmd)}")
     node = popen_group(node_cmd, prefix="node")
     monitor = LineMonitor(node, "node")
@@ -510,6 +515,10 @@ def main():
                         help="spin = ALU busy-wait (primary condition); "
                              "mem = 64MB cache/bandwidth thrash per thread "
                              "(perception-like, 2B-extended condition)")
+    parser.add_argument("--inject-stall", default=None, metavar="T,MS,CYC",
+                        help="fault injection for safety-fallback "
+                             "validation, e.g. '60,60,3' = 60ms synthetic "
+                             "stall for 3 cycles starting t+60s")
     parser.add_argument("--loop-hz", type=float, default=20.0,
                         help="control loop rate / deadline (20 = primary "
                              "50ms condition; 40 = 2B-extended 25ms "
