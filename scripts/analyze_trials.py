@@ -54,9 +54,9 @@ SS_CONSECUTIVE = 10
 
 DEADLINE_MS = 50.0
 
-CONDITION_ORDER = ["ADAPTIVE", "CONST330", "FIXED400"]
-CONDITION_COLORS = {"ADAPTIVE": "tab:blue", "CONST330": "tab:orange",
-                    "FIXED400": "tab:green"}
+CONDITION_ORDER = ["ADAPTIVE", "CONST200", "CONST330", "FIXED400"]
+CONDITION_COLORS = {"ADAPTIVE": "tab:blue", "CONST200": "tab:red",
+                    "CONST330": "tab:orange", "FIXED400": "tab:green"}
 
 
 def collect_csv_files(paths):
@@ -234,6 +234,43 @@ def print_aggregates(by_condition):
             print(f"    {label:>22}: {agg(trials, key)}")
 
 
+def _pairwise(a, b):
+    """(welch_stat, welch_p, mwu_stat, mwu_p) for two samples."""
+    welch = scipy_stats.ttest_ind(a, b, equal_var=False)
+    mwu = scipy_stats.mannwhitneyu(a, b, alternative="two-sided")
+    return welch.statistic, welch.pvalue, mwu.statistic, mwu.pvalue
+
+
+def _loo_range(a, b):
+    """Leave-one-out sensitivity: (welch_p_min, welch_p_max, mwu_p_min,
+    mwu_p_max) over all datasets with one trial removed (from either
+    group). Shows whether a conclusion hinges on a single trial."""
+    wps, mps = [], []
+    for i in range(len(a)):
+        sub = a[:i] + a[i + 1:]
+        if len(sub) >= 2:
+            _, wp, _, mp = _pairwise(sub, b)
+            wps.append(wp); mps.append(mp)
+    for j in range(len(b)):
+        sub = b[:j] + b[j + 1:]
+        if len(sub) >= 2:
+            _, wp, _, mp = _pairwise(a, sub)
+            wps.append(wp); mps.append(mp)
+    return min(wps), max(wps), min(mps), max(mps)
+
+
+def holm(pvals):
+    """Holm-Bonferroni adjusted p-values (same order as input)."""
+    m = len(pvals)
+    order = sorted(range(m), key=lambda i: pvals[i])
+    adj = [0.0] * m
+    running = 0.0
+    for rank, idx in enumerate(order):
+        running = max(running, (m - rank) * pvals[idx])
+        adj[idx] = min(1.0, running)
+    return adj
+
+
 def print_stats_tests(by_condition):
     print("\n== Statistical tests (ADAPTIVE vs baselines) ==")
     if scipy_stats is None:
@@ -243,7 +280,8 @@ def print_stats_tests(by_condition):
         print("  no ADAPTIVE trials found")
         return
     adaptive = by_condition["ADAPTIVE"]
-    for baseline in ["FIXED400", "CONST330"]:
+    rows = []
+    for baseline in ["CONST200", "CONST330", "FIXED400"]:
         if baseline not in by_condition:
             continue
         base = by_condition[baseline]
@@ -255,11 +293,21 @@ def print_stats_tests(by_condition):
                 print(f"  ADAPTIVE vs {baseline} on {label}: "
                       "need >=2 trials per condition")
                 continue
-            welch = scipy_stats.ttest_ind(a, b, equal_var=False)
-            mwu = scipy_stats.mannwhitneyu(a, b, alternative="two-sided")
-            print(f"  ADAPTIVE vs {baseline} on {label}: "
-                  f"Welch t={welch.statistic:.3f} p={welch.pvalue:.4f} | "
-                  f"Mann-Whitney U={mwu.statistic:.1f} p={mwu.pvalue:.4f}")
+            rows.append((baseline, label, a, b) + _pairwise(a, b))
+
+    # Holm correction across the full family of reported comparisons,
+    # per test type.
+    welch_adj = holm([r[5] for r in rows])
+    mwu_adj = holm([r[7] for r in rows])
+
+    for r, wadj, madj in zip(rows, welch_adj, mwu_adj):
+        baseline, label, a, b, wstat, wp, mstat, mp = r
+        print(f"  ADAPTIVE vs {baseline} on {label}:")
+        print(f"    Welch t={wstat:.3f} p={wp:.4f} (Holm-adj {wadj:.4f}) | "
+              f"Mann-Whitney U={mstat:.1f} p={mp:.4f} (Holm-adj {madj:.4f})")
+        wlo, whi, mlo, mhi = _loo_range(a, b)
+        print(f"    leave-one-out sensitivity: Welch p in "
+              f"[{wlo:.4f}, {whi:.4f}] | MWU p in [{mlo:.4f}, {mhi:.4f}]")
 
 
 def print_scheduler_validation(by_condition):

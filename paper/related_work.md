@@ -62,6 +62,22 @@ against control quality at runtime — but target deterministic or linear contro
 formulations (or the estimation side of the loop), not the internal sampling budget of a
 stochastic sampling-based optimizer.
 
+**Feedback scheduling.** The real-time systems community has long applied feedback
+control to computation itself: measuring execution behavior and adjusting task parameters
+to hold a utilization target. Feedback control real-time scheduling [lu2002feedback]
+regulates CPU utilization via measured execution times; the elastic task model
+[buttazzo1998elastic] adapts task rates within declared ranges under overload; and
+feedback–feedforward scheduling [cervin2002feedback] applies these ideas to control tasks
+specifically, adjusting sampling periods from measured load. **Our budget law is an
+instance of this family** — a measured-cost, utilization-targeting allocator with
+smoothing and clamping — and we claim no novelty for the mechanism itself. What is new,
+to the best of our knowledge, is the *actuator*: rather than adjusting task periods or
+admission, we adjust the internal sampling budget of a stochastic sampling-based
+optimizer, exploiting a property those classical works could not assume — MPPI's
+per-cycle computation is fungible in fine increments with a *characterizable, gracefully
+degrading* relationship between computation and control quality (the Pareto curve of
+Sec. A), rather than the step change of dropping or delaying a whole task.
+
 **Event- and self-triggered MPC** adapts *when* control is computed rather than *how much*
 computation each solve receives [heemels2012introduction]. Resource-aware self-triggered
 MPC [gommans2015resource] chooses inter-sample times online to save computation and
@@ -85,9 +101,10 @@ samples to draw, and the adaptation is not driven by measured compute availabili
 
 ## Positioning
 
-We are not aware of prior work that treats MPPI's sample count as a runtime-adaptive
-control variable driven by measured per-cycle execution time with an explicit
-deadline-satisfaction objective, validated in closed-loop UAV experiments. We
+We are not aware of prior work that applies feedback-scheduling principles to the
+sampling budget of a stochastic sampling-based optimal controller, with an explicit
+deadline-satisfaction objective and safety fallback, validated in closed-loop UAV
+experiments. We
 formulate runtime sample-count selection as an online computational resource allocation
 problem: the scheduler measures per-sample execution time, sets the next cycle's budget to
 fit within a fixed fraction of the control period, and falls back safely under consecutive

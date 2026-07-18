@@ -33,10 +33,15 @@ per control cycle. Existing UAV deployments treat this sample count as a
 fixed, offline-tuned design parameter, implicitly assuming that the compute
 available to the controller is constant at runtime --- an assumption that
 fails when the controller shares a companion computer with perception or
-other variable workloads. We formulate runtime MPPI sample-count selection
-as an online computational resource allocation problem, using measured
-per-cycle execution time to adapt computational effort while maintaining
-closed-loop control deadlines, with an explicit safety fallback mechanism.
+other variable workloads. We apply feedback-scheduling principles to
+MPPI's sampling budget: measured per-cycle execution time drives a
+utilization-targeting budget law that adapts computational effort while
+maintaining closed-loop control deadlines, with an explicit safety
+fallback mechanism. The mechanism is deliberately classical; the
+contribution is its application to a stochastic sampling-based optimizer
+--- whose computation is fungible in fine increments with gracefully
+degrading quality --- and a pre-registered, two-baseline, two-regime
+experimental evaluation of what adaptation does and does not buy.
 In software-in-the-loop experiments (ROS~2, PX4, Gazebo) across repeated
 trials, the adaptive controller reduced deadline misses from
 $18.0 \pm 4.1$ to $0.15 \pm 0.38$ per trial relative to a conventional
@@ -95,10 +100,14 @@ clamping and smoothing --- and requires no model of the contention source.
 
 \subsubsection*{Contributions}
 \begin{enumerate}
-  \item A formulation of MPPI sample-count selection as online
-  computational resource allocation, with a measured-execution-time
-  budget law and an explicit deadline-satisfaction objective and safety
-  fallback (Sec.~\ref{sec:method}).
+  \item The application of feedback-scheduling
+  principles~\cite{lu2002feedback,cervin2002feedback} to the sampling
+  budget of a stochastic sampling-based optimal controller: a
+  measured-execution-time budget law with a deadline-satisfaction
+  objective and a domain-specific safety fallback
+  (Sec.~\ref{sec:method}). We claim no novelty for the scheduling
+  mechanism itself; the novelty lies in the actuator and its
+  consequences.
   \item An offline characterization of MPPI's quality--compute trade-off
   (a Pareto sweep over $N$) that both motivates the approach and, as we
   show, \emph{predicts} its closed-loop behavior: adaptation operates on
@@ -182,6 +191,26 @@ deterministic or linear formulations (or the estimation side of the
 loop), not the internal sampling budget of a stochastic sampling-based
 optimizer.
 
+\emph{Feedback scheduling.} The real-time systems community has long
+applied feedback control to computation itself: feedback control
+real-time scheduling regulates CPU utilization via measured execution
+times~\cite{lu2002feedback}; the elastic task model adapts task rates
+within declared ranges under overload~\cite{buttazzo1998elastic}; and
+feedback--feedforward scheduling applies these ideas to control tasks
+specifically, adjusting sampling periods from measured
+load~\cite{cervin2002feedback}. Our budget law
+(Sec.~\ref{sec:scheduler}) is an instance of this family --- a
+measured-cost, utilization-targeting allocator with smoothing and
+clamping --- and we claim no novelty for the mechanism itself. What is
+new, to the best of our knowledge, is the \emph{actuator}: rather than
+adjusting task periods or admission, we adjust the internal sampling
+budget of a stochastic sampling-based optimizer, exploiting a property
+classical feedback scheduling could not assume --- MPPI's per-cycle
+computation is fungible in fine increments, with a characterizable and
+gracefully degrading quality--compute relationship
+(Sec.~\ref{sec:pareto}), rather than the step change of dropping or
+delaying a whole task.
+
 \emph{Event- and self-triggered MPC} adapts \emph{when} control is
 computed rather than \emph{how much} computation each solve
 receives~\cite{heemels2012introduction,gommans2015resource}.
@@ -205,10 +234,11 @@ availability.
 
 \subsection{Positioning}
 
-We are not aware of prior work that treats MPPI's sample count as a
-runtime-adaptive control variable driven by measured per-cycle execution
-time with an explicit deadline-satisfaction objective, validated in
-closed-loop UAV experiments. Our results connect the threads above: an
+We are not aware of prior work that applies feedback-scheduling
+principles to the sampling budget of a stochastic sampling-based optimal
+controller, with an explicit deadline-satisfaction objective and safety
+fallback, validated in closed-loop UAV experiments. Our results connect
+the threads above: an
 offline quality--compute characterization (in the spirit
 of~\cite{pant2021anytime}) predicts closed-loop quality outcomes across
 operating regimes, because adaptation operates on the flat region of
@@ -279,10 +309,16 @@ and allocates the next cycle's budget as
 N_{t+1} = \mathrm{clamp}\!\left(\left\lfloor
 \frac{\beta\, T}{\hat{\tau}_t} \right\rfloor,\; N_{\min},\; N_{\max}\right).
 \end{equation}
-Equation~\eqref{eq:budget} is a ratio law: it targets a compute
-utilization of $\beta T$ per cycle regardless of \emph{why} per-sample
-cost changed (CPU contention, frequency scaling, or a changed deadline),
-which is what allows the same law to transfer across operating regimes
+Equation~\eqref{eq:budget} is a classical feedback-scheduling law ---
+measured per-unit cost, utilization-target allocation, smoothing,
+clamping --- in the lineage of feedback control real-time
+scheduling~\cite{lu2002feedback} and elastic task
+adaptation~\cite{buttazzo1998elastic}; what differs is the actuator (an
+optimizer's internal sampling budget rather than task periods or
+admission). It is a ratio law: it targets a compute utilization of
+$\beta T$ per cycle regardless of \emph{why} per-sample cost changed
+(CPU contention, frequency scaling, or a changed deadline), which is
+what allows the same law to transfer across operating regimes
 (Sec.~\ref{sec:results:40hz}). We use $\beta = 0.6$, $w = 3$,
 $N_{\min} = 20$, $N_{\max} = 400$; the margin $1 - \beta$ absorbs
 measurement noise, scheduling jitter, and the non-MPPI portion of the
@@ -385,7 +421,11 @@ oscillatory scheduling (``chatter''). Scheduler transient behavior is
 quantified by response latency (cycles from a per-sample cost spike to a
 $\geq$10\% budget reduction) and recovery time. Between-condition
 comparisons use Welch's $t$-test and the Mann--Whitney $U$ test on
-per-trial statistics.
+per-trial statistics, with Holm correction across the reported family of
+comparisons and a leave-one-out sensitivity analysis for every pairwise
+test (reported wherever the two test types disagree).
+\todo{refresh Holm-adjusted values once the const-200 arm joins the
+reported family}
 
 % =========================================================================
 \section{Results}
@@ -481,10 +521,20 @@ in fact the best of the three --- but violated the real-time contract on
 roughly every third cycle, degrading the effective control rate to
 $\sim$38\,Hz; the cost of a miss in SITL at this margin is the broken
 timing contract and rate degradation, not tracking collapse
-(Sec.~\ref{sec:discussion}). Tests on steady-state RMS between adaptive
-and Fixed-400 disagree (Welch $p = 0.90$; Mann--Whitney $p = 0.01$, an
-$n{=}8$ rank artifact driven by one outlier trial); we report both and
-claim no consistent tracking difference.
+(Sec.~\ref{sec:discussion}). On steady-state RMS between adaptive and
+Fixed-400, the mean-based and rank-based tests disagree (Welch
+$p = 0.90$; Mann--Whitney $p = 0.01$), and a leave-one-out sensitivity
+analysis resolves the disagreement: the rank result is robust to
+removing any single trial (Mann--Whitney $p \in [0.0003, 0.021]$ over
+all leave-one-out subsets), while Welch is not
+($p \in [0.047, 0.97]$). The per-trial data explain why: adaptive's
+seven non-outlier trials (0.081--0.097\,m) all track better than every
+Fixed-400 non-outlier trial (0.098--0.126\,m; medians 0.093 vs.\
+0.116\,m), and a single adaptive outlier trial (0.451\,m, still a valid
+flight) inflates the mean-based comparison. Typical (median) tracking
+under adaptation was thus, if anything, \emph{better} at the tighter
+deadline; we nevertheless claim only non-inferiority (H2), consistent
+with the primary regime.
 \todo{Figure: 40\,Hz overlay time series, three conditions.}
 
 \subsection{Equivalent-budget analysis: the Pareto curve predicts flight}

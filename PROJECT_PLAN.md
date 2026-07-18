@@ -297,6 +297,23 @@ operating regime."*
     across operating regimes without offline retuning — not outperforming the best
     hand-tuned constant within every fixed regime.
 
+### Post-review addition — Constant-200 arm (pre-registered 2026-07-18, BEFORE data)
+Per aggregated external review (M2, "advisor" recommendation): one additional constant
+baseline at **N=200** (near the Pareto elbow), 8 trials per regime, run under the
+identical locked conditions. Question: *could a much smaller fixed budget have solved
+this?* **Interpretation rules locked before any trial runs:**
+- If const200 misses deadlines in either regime → strengthens the transfer claim (even
+  elbow-level constants embed a regime assumption).
+- If const200 survives both regimes with tracking within noise → the empirical advantage
+  claims narrow fully to the tuning-free framing: choosing N=200 a priori requires
+  exactly the offline Pareto+stress characterization that adaptation replaces; adaptive
+  additionally recovers idle-time quality headroom (within Pareto noise) and retains
+  graceful degradation beyond tested conditions. **This outcome is published as-is, not
+  hidden** — it converges with the M1 reframe (application/methodology paper).
+- Either way, "adaptive ≈ const330" gains the missing context: with two constants
+  bracketing the adaptive range, in-regime parity is either shared by all reasonable
+  constants (supporting the flat-Pareto explanation) or specific to the tuned value.
+
 ### Phase 2C — Statistics & reporting — ✅ COMPLETE (2026-07-18)
 - [x] Mean/stddev across trials for all metrics — `scripts/analyze_trials.py`, run on both
   `results/` (20Hz) and `results_40hz/` (25ms); outputs in each set's `analysis/` dir.

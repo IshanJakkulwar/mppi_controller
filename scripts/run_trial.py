@@ -56,6 +56,7 @@ import time
 
 CONDITIONS = {
     "adaptive": ["-p", "use_scheduler:=true"],
+    "const200": ["-p", "use_scheduler:=false", "-p", "fixed_n:=200"],
     "const330": ["-p", "use_scheduler:=false", "-p", "fixed_n:=330"],
     "fixed400": ["-p", "use_scheduler:=false", "-p", "fixed_n:=400"],
 }
