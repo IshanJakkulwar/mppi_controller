@@ -18,6 +18,16 @@ trajectories per cycle and combines them via an information-theoretic weighting
 parameter: it determines both the quality of the optimized control and, linearly, the
 per-cycle computational cost.
 
+A substantial body of work has since extended MPPI along several axes: robustness to
+disturbance via ancillary tracking controllers and augmented-state formulations
+[williams2018robust, gandhi2021robust], improved sampling distributions
+[mohamed2022logmppi], generalized information-theoretic objectives [wang2021tsallis], and
+safety guarantees through control barrier functions [yin2023shield]. Existing MPPI
+research has thus largely focused on improving the sampling distribution, robustness,
+constraint handling, or computational acceleration — the *size* of the sampling budget
+itself, and its relationship to fluctuating runtime compute availability, has received
+comparatively little attention.
+
 Recent work has brought MPPI onto UAVs with onboard, embedded compute. Minařík et al.
 [minarik2024mppi] demonstrate, to the best of our knowledge, the first onboard MPPI-based
 control in real UAV flight, running the sampling-based optimization on an onboard GPU and
@@ -27,11 +37,13 @@ Nano under a ROS 2 / PX4 stack closely matching ours, and select an MPPI configu
 (horizon 40, 800–1250 samples) explicitly to satisfy the 50 Hz deadline imposed by the
 flight controller — a *fixed* configuration derived through *offline* analysis.
 
-Across this line of work, the sample count is treated as a design-time constant: chosen
-offline against the target hardware's nominal capacity, then held fixed in deployment.
-This implicitly assumes the compute available to the controller is constant at runtime —
-an assumption that fails when the controller shares a companion computer with perception,
-mapping, logging, or other variable workloads.
+Across representative embedded MPPI implementations, the sampling budget is selected
+offline based on expected computational resources and then held fixed during deployment.
+This design choice is not accidental: a fixed budget simplifies timing analysis,
+implementation, and parameter tuning, making it the de facto standard in existing MPPI
+deployments. It nevertheless embeds the assumption that the compute available to the
+controller is constant at runtime — an assumption that fails when the controller shares a
+companion computer with perception, mapping, logging, or other variable workloads.
 
 ## B. Computational-resource-aware control
 
@@ -73,9 +85,9 @@ samples to draw, and the adaptation is not driven by measured compute availabili
 
 ## Positioning
 
-To the best of our knowledge, no prior work treats MPPI's sample count as a
-runtime-adaptive control variable driven by measured per-cycle execution time with an
-explicit deadline-satisfaction objective, validated in closed-loop UAV flight. We
+We are not aware of prior work that treats MPPI's sample count as a runtime-adaptive
+control variable driven by measured per-cycle execution time with an explicit
+deadline-satisfaction objective, validated in closed-loop UAV experiments. We
 formulate runtime sample-count selection as an online computational resource allocation
 problem: the scheduler measures per-sample execution time, sets the next cycle's budget to
 fit within a fixed fraction of the control period, and falls back safely under consecutive

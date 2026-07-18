@@ -1,0 +1,615 @@
+% =========================================================================
+% Compute-Aware Anytime MPPI for UAV Control — ECC submission draft
+% Phase 5 full draft (2026-07-18). Numbers are from the committed Phase 2
+% datasets (results/ @20Hz n=13/condition, results_40hz/ @40Hz n=8/condition).
+% Locked wording rules: PROJECT_PLAN.md "Paper wording (locked)".
+% Build: pdflatex main && bibtex main && pdflatex main && pdflatex main
+% =========================================================================
+\documentclass[conference]{IEEEtran}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{cite}
+
+\usepackage{xcolor}
+\newcommand{\todo}[1]{\textbf{\textcolor{red}{[TODO: #1]}}}
+
+\title{Compute-Aware Anytime MPPI: Runtime Sample-Count Adaptation\\
+for Real-Time UAV Control}
+
+% TODO: author block (name, affiliation, email; funding acks)
+\author{\IEEEauthorblockN{Vishal Jakkulwar}
+\IEEEauthorblockA{\todo{affiliation / email / advisor co-authors}}}
+
+\begin{document}
+\maketitle
+
+% =========================================================================
+\begin{abstract}
+Sampling-based optimal control methods such as Model Predictive Path
+Integral (MPPI) control require selecting a number of trajectory samples
+per control cycle. Existing UAV deployments treat this sample count as a
+fixed, offline-tuned design parameter, implicitly assuming that the compute
+available to the controller is constant at runtime --- an assumption that
+fails when the controller shares a companion computer with perception or
+other variable workloads. We formulate runtime MPPI sample-count selection
+as an online computational resource allocation problem, using measured
+per-cycle execution time to adapt computational effort while maintaining
+closed-loop control deadlines, with an explicit safety fallback mechanism.
+In software-in-the-loop experiments (ROS~2, PX4, Gazebo) across repeated
+trials, the adaptive controller reduced deadline misses from
+$18.0 \pm 4.1$ to $0.15 \pm 0.38$ per trial relative to a conventional
+fixed-budget baseline under CPU contention ($p < 10^{-3}$), with
+statistically indistinguishable tracking accuracy. Against a
+\emph{carefully tuned} constant budget --- fixed a priori at the adaptive
+scheduler's preliminary average --- adaptation performed equivalently in
+the regime the constant was tuned for, and we show why: adaptation
+operates on the flat region of MPPI's quality--compute curve. In a second,
+pre-registered operating regime with a tighter control period, the tuned
+constant missed 30.5\% of all control cycles while the adaptive controller
+re-regulated its budget automatically and maintained essentially zero
+misses ($0.75 \pm 0.71$ per trial). The value of runtime adaptation is
+thus robustness across operating regimes without offline retuning, rather
+than outperforming a well-tuned constant within any single regime.
+\end{abstract}
+
+% =========================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Model Predictive Path Integral (MPPI) control has emerged as a practical
+sampling-based optimal control method for agile robotic platforms: it
+handles nonlinear dynamics and non-convex, even non-smooth cost functions
+by evaluating a large number $N$ of stochastic trajectory rollouts per
+control cycle and averaging their controls under an information-theoretic
+weighting~\cite{williams2016aggressive,williams2018information}. On
+unmanned aerial vehicles (UAVs), MPPI has recently been demonstrated with
+onboard, embedded computation~\cite{minarik2024mppi,enrico2025comparison}.
+
+The per-cycle computational cost of MPPI is essentially linear in $N$,
+and the choice of $N$ mediates a direct trade-off between control quality
+and compute. In every embedded deployment we are aware of, this trade-off
+is resolved \emph{offline}: the designer characterizes the target
+hardware, selects the largest $N$ that fits the control period, and holds
+it fixed~\cite{enrico2025comparison}. A fixed budget is a reasonable
+default --- it simplifies timing analysis, implementation, and tuning ---
+but it hard-codes an assumption that rarely holds in practice: that the
+compute available to the controller is \emph{constant} at runtime. On a
+real aerial platform the controller typically shares a companion computer
+with perception, mapping, state estimation, logging, and communication
+stacks whose demands fluctuate. When a compute transient collides with a
+fixed sampling budget, the controller either misses its deadline ---
+degrading the real-time contract that the surrounding autopilot stack
+depends on --- or must be provisioned so conservatively that quality is
+sacrificed in the common case.
+
+This paper treats the sample count as a \emph{runtime-adaptive control
+variable} instead. We formulate sample-count selection as an online
+computational resource allocation problem: a lightweight scheduler
+measures the controller's own recent per-sample execution time, allocates
+the next cycle's budget to fit a fixed fraction of the control period, and
+triggers a safety fallback under consecutive deadline misses. The
+mechanism is deliberately simple --- a measured-cost budget law with
+clamping and smoothing --- and requires no model of the contention source.
+
+\subsubsection*{Contributions}
+\begin{enumerate}
+  \item A formulation of MPPI sample-count selection as online
+  computational resource allocation, with a measured-execution-time
+  budget law and an explicit deadline-satisfaction objective and safety
+  fallback (Sec.~\ref{sec:method}).
+  \item An offline characterization of MPPI's quality--compute trade-off
+  (a Pareto sweep over $N$) that both motivates the approach and, as we
+  show, \emph{predicts} its closed-loop behavior: adaptation operates on
+  the flat region of the quality--compute curve, which is precisely why
+  large budget reductions cost little tracking quality
+  (Sec.~\ref{sec:results}).
+  \item A pre-registered, staged experimental validation in
+  software-in-the-loop (ROS~2 Humble, PX4, Gazebo Harmonic, MAVROS):
+  repeated trials against \emph{two} baselines --- the conventional
+  fixed-maximum budget and a \emph{predetermined, carefully tuned}
+  constant budget --- across \emph{two} operating regimes (50\,ms and
+  25\,ms control deadlines), with statistical tests
+  (Sec.~\ref{sec:setup},~\ref{sec:results}).
+  \item An honest negative result with a systems explanation: within the
+  regime a constant budget is tuned for, adaptation is statistically
+  indistinguishable from it --- and on our platform, OS scheduling
+  shields a periodic control task strongly enough that no fair-share CPU
+  load level could break the tuned constant at the 50\,ms deadline. The
+  case for adaptation is robustness \emph{across} regimes: the tuned
+  constant missed 30.5\% of cycles at the tighter deadline, while
+  adaptation transferred with zero retuning (Sec.~\ref{sec:discussion}).
+\end{enumerate}
+
+% =========================================================================
+\section{Related Work}
+\label{sec:related}
+
+Our work sits at the intersection of three threads: sampling-based MPC on
+aerial platforms, computational-resource-aware control, and adaptive
+sampling within MPPI itself.
+
+\subsection{MPPI on aerial platforms and embedded hardware}
+
+MPPI samples candidate control trajectories per cycle and combines them
+via an information-theoretic
+weighting~\cite{williams2016aggressive,williams2018information}. The
+sample count $N$ is a central parameter, determining both the quality of
+the optimized control and, linearly, the per-cycle cost. A substantial
+body of work has extended MPPI along several axes: robustness via
+ancillary tracking controllers and augmented-state
+formulations~\cite{williams2018robust,gandhi2021robust}, improved
+sampling distributions~\cite{mohamed2022logmppi}, generalized
+information-theoretic objectives~\cite{wang2021tsallis}, and safety
+guarantees through control barrier functions~\cite{yin2023shield}.
+Existing MPPI research has thus largely focused on improving the sampling
+distribution, robustness, constraint handling, or computational
+acceleration; the \emph{size} of the sampling budget itself, and its
+relationship to fluctuating runtime compute availability, has received
+comparatively little attention.
+
+On UAVs specifically, Mina\v{r}\'ik et al.~\cite{minarik2024mppi}
+demonstrate onboard GPU-parallelized MPPI in real flight, noting that
+real-time feasibility constrains the usable sample count. Enrico, Mancini
+and Capello~\cite{enrico2025comparison} compare NMPC against
+GPU-parallelized MPPI on a Jetson Orin Nano under a ROS~2/PX4 stack
+closely matching ours, selecting an MPPI configuration (horizon 40,
+800--1250 samples) explicitly to satisfy the 50\,Hz deadline imposed by
+the flight controller --- a \emph{fixed} configuration derived through
+\emph{offline} analysis. Across representative embedded MPPI
+implementations, the sampling budget is selected offline based on
+expected computational resources and then held fixed during deployment.
+This choice is not accidental: a fixed budget simplifies timing analysis,
+implementation, and parameter tuning, making it the de facto standard ---
+but it embeds the assumption that compute availability is constant at
+runtime.
+
+\subsection{Computational-resource-aware control}
+
+A separate literature treats computation explicitly as a limited resource
+for control. \emph{Anytime control} designs controllers whose output
+quality improves with allotted computation, so early termination still
+yields a usable command: switching among control laws of increasing
+quality under processor preemption~\cite{fontanelli2008anytime},
+computing control sequences under stochastic processor
+availability~\cite{quevedo2013sequence}, and --- closest in spirit to our
+setting --- co-designing an anytime perception-based \emph{estimator}
+with a robust controller using an offline-characterized delay/error
+trade-off curve as a runtime contract~\cite{pant2021anytime}. These
+frameworks established the principle we build on, but target
+deterministic or linear formulations (or the estimation side of the
+loop), not the internal sampling budget of a stochastic sampling-based
+optimizer.
+
+\emph{Event- and self-triggered MPC} adapts \emph{when} control is
+computed rather than \emph{how much} computation each solve
+receives~\cite{heemels2012introduction,gommans2015resource}.
+\emph{Weakly-hard real-time} models formalize tolerance to bounded
+deadline-miss patterns~\cite{bernat2001weakly}, with recent work
+characterizing stability under consecutive-miss
+constraints~\cite{maggio2020control}. That thread treats the miss pattern
+as given and analyzes its consequences; our scheduler acts
+\emph{upstream}, adapting per-cycle computation to avoid misses, with the
+weakly-hard perspective informing our consecutive-miss safety fallback.
+
+\subsection{Adaptive sampling within MPPI}
+
+A third, orthogonal thread adapts MPPI's sampling \emph{distribution}:
+Asmar et al.~\cite{asmar2023mpopis} generalize MPPI to admit adaptive
+importance sampling, matching proposal moments to improve sample
+efficiency at fixed budget. Such methods adapt \emph{where} to sample,
+driven by optimization performance; they do not adapt \emph{how many}
+samples to draw, and the adaptation is not driven by measured compute
+availability.
+
+\subsection{Positioning}
+
+We are not aware of prior work that treats MPPI's sample count as a
+runtime-adaptive control variable driven by measured per-cycle execution
+time with an explicit deadline-satisfaction objective, validated in
+closed-loop UAV experiments. Our results connect the threads above: an
+offline quality--compute characterization (in the spirit
+of~\cite{pant2021anytime}) predicts closed-loop quality outcomes across
+operating regimes, because adaptation operates on the flat region of
+MPPI's quality--compute curve, while deadline adherence --- the
+weakly-hard-motivated metric --- is where adaptation shows its value.
+
+% =========================================================================
+\section{Method}
+\label{sec:method}
+
+\subsection{Preliminaries: MPPI}
+
+We consider velocity-commanded quadrotor position control with state
+$\mathbf{x}_t \in \mathbb{R}^3$ (position) and control
+$\mathbf{u}_t \in \mathbb{R}^3$ (commanded velocity), propagated over a
+horizon of $H$ steps with timestep $\Delta t$ under single-integrator
+prediction dynamics $\mathbf{x}_{k+1} = \mathbf{x}_k + \mathbf{u}_k
+\Delta t$ (the plant itself is the full PX4/Gazebo quadrotor stack; see
+Sec.~\ref{sec:threats} for the model-mismatch discussion). At each control
+cycle, MPPI draws $N$ control-sequence samples
+$\{\mathbf{u}^{(i)}_{0:H-1}\}_{i=1}^{N}$ by perturbing a nominal sequence
+with Gaussian noise of standard deviation $\sigma$, rolls each out through
+the prediction model, and scores it with a quadratic cost
+\begin{equation}
+S^{(i)} = \sum_{k=0}^{H-1} \Big( \|\mathbf{x}^{(i)}_k -
+\mathbf{x}^{\mathrm{ref}}\|^2_{Q} + \|\mathbf{u}^{(i)}_k\|^2_{R} \Big)
+ + \|\mathbf{x}^{(i)}_H - \mathbf{x}^{\mathrm{ref}}\|^2_{Q_f},
+\end{equation}
+then combines samples by exponentiated-cost weighting with inverse
+temperature $\lambda$:
+\begin{equation}
+w_i = \frac{\exp\!\big(-\tfrac{1}{\lambda}(S^{(i)} - S_{\min})\big)}
+{\sum_{j=1}^{N}\exp\!\big(-\tfrac{1}{\lambda}(S^{(j)} - S_{\min})\big)},
+\qquad
+\mathbf{u}^\star = \sum_{i=1}^{N} w_i\, \mathbf{u}^{(i)}_{0}.
+\end{equation}
+The first control of the weighted average is published as the velocity
+setpoint. The per-cycle cost of this procedure is dominated by the $N$
+rollouts and is, to good approximation, linear in $N$.
+
+\subsection{The quality--compute trade-off}
+\label{sec:pareto}
+
+We characterized quality versus $N$ offline with a 10-seed sweep over
+$N \in \{20, 50, 100, 150, 200, 250, 300, 350, 400\}$ on a standalone
+(simulator-free) tracking task. RMS tracking error improves by only
+13.4\% from $N{=}20$ to $N{=}400$ while per-call compute grows
+$\sim$19$\times$; beyond $N \approx 150$--$200$ the differences are
+within the sweep's own seed-to-seed noise floor
+($\sigma \approx 0.03$ in the sweep's units). The curve is thus steep
+below $N \approx 150$ and essentially flat above --- an
+\emph{anytime-friendly} shape: samples beyond the elbow are cheap to
+give up. \todo{Figure: Pareto sweep, mean $\pm$ std vs.\ $N$.}
+
+\subsection{Anytime scheduler}
+\label{sec:scheduler}
+
+Let $T$ be the control period (deadline), $\beta \in (0,1)$ a budget
+margin, and $c_t$ the measured wall-clock duration of cycle $t$'s MPPI
+call with $N_t$ samples. The scheduler maintains a smoothed per-sample
+cost estimate over a window of the last $w$ cycles,
+\begin{equation}
+\hat{\tau}_t = \frac{1}{w}\sum_{j=t-w+1}^{t} \frac{c_j}{N_j},
+\end{equation}
+and allocates the next cycle's budget as
+\begin{equation}
+\label{eq:budget}
+N_{t+1} = \mathrm{clamp}\!\left(\left\lfloor
+\frac{\beta\, T}{\hat{\tau}_t} \right\rfloor,\; N_{\min},\; N_{\max}\right).
+\end{equation}
+Equation~\eqref{eq:budget} is a ratio law: it targets a compute
+utilization of $\beta T$ per cycle regardless of \emph{why} per-sample
+cost changed (CPU contention, frequency scaling, or a changed deadline),
+which is what allows the same law to transfer across operating regimes
+(Sec.~\ref{sec:results:40hz}). We use $\beta = 0.6$, $w = 3$,
+$N_{\min} = 20$, $N_{\max} = 400$; the margin $1 - \beta$ absorbs
+measurement noise, scheduling jitter, and the non-MPPI portion of the
+cycle.
+
+\emph{Safety fallback.} Independently of the smoothed estimate, the
+scheduler counts consecutive raw deadline overruns ($c_t > T$); at two
+consecutive misses it signals a fallback condition under which a simpler
+controller (e.g., the PID stage of our stack) can be substituted. The
+threshold of two avoids flapping on isolated timing spikes and is
+motivated by consecutive-miss weakly-hard stability
+analyses~\cite{maggio2020control}. In all experiments reported here the
+fallback was signaled but never needed to be engaged by the adaptive
+controller.
+
+\subsection{Implementation}
+
+The controller runs in a ROS~2 Humble node at a wall-timer period $T$
+(20\,Hz or 40\,Hz), consuming MAVROS pose estimates and publishing MAVROS
+velocity setpoints to PX4. The node performs no control mathematics
+itself; all optimization lives in controller classes, and the scheduler
+interacts with MPPI solely through the measured call duration and the
+per-call sample-count override --- the mechanism is agnostic to the MPPI
+internals and would compose with the distribution-adaptation methods of
+Sec.~\ref{sec:related}. Cycle-level telemetry (sample count, call time,
+state-to-command latency, tracking error, deadline flag) is logged to CSV
+every cycle.
+
+% =========================================================================
+\section{Experimental Setup}
+\label{sec:setup}
+
+\subsection{Stack, task, and conditions}
+
+Experiments use PX4 SITL with Gazebo Harmonic (x500 quadrotor), MAVROS,
+and ROS~2 Humble on a 16-hardware-thread Intel i7-13620H running Linux
+6.8. The task is a 4-waypoint square circuit (2\,m sides at 5\,m
+altitude) followed by station-keeping at the final waypoint; each trial
+comprises takeoff, arming/offboard entry, and 90--105\,s of tracking.
+
+Three controller conditions are compared:
+\begin{itemize}
+  \item \textbf{Adaptive}: the scheduler of Sec.~\ref{sec:scheduler}.
+  \item \textbf{Fixed-400}: the conventional deployment choice,
+  $N = N_{\max} = 400$ always.
+  \item \textbf{Constant-330}: an equivalent-budget control condition.
+  The value was \emph{fixed a priori}, before any Phase-2 trial ran, at
+  the adaptive scheduler's average $N = 329.77$ measured in a
+  preliminary stress experiment --- deriving it from the main
+  experiment's own adaptive runs would make the baseline depend on the
+  result it is compared against. It was not re-tuned afterwards.
+\end{itemize}
+
+\subsection{Stress condition (calibrated, then locked)}
+\label{sec:stress}
+
+Compute contention is injected by a load generator sharing the
+controller's CPU set. Because a general-purpose OS scheduler (CFS/EEVDF)
+strongly shields a periodic control task from fair-share busy-wait load
+--- in calibration, 32 and 64 unpinned threads and 16 threads pinned to
+4 cores all left the Fixed-400 call time at $\sim$37\,ms with zero misses
+at the 50\,ms deadline, while a single-core pin destabilized flight
+entirely --- the locked condition pins the controller node and the load
+to \emph{two} cores (an embedded-class compute envelope; tighter
+real-time constraints of this kind are expected on lower-performance
+embedded processors) with 6 busy-wait threads for a 30\,s window
+beginning 20\,s after tracking starts. The simulator, autopilot, and
+MAVROS remain unpinned, playing the role of physically separate systems.
+All load parameters were calibrated on single Fixed-400 trials and locked
+\emph{before} the comparison trials ran.
+
+\subsection{Operating regimes (pre-registered)}
+
+The experimental plan specified a second operating regime --- a reduced
+control period --- to evaluate whether conclusions generalize across
+timing constraints. The \textbf{primary regime} runs $T = 50$\,ms
+(20\,Hz); the \textbf{secondary regime} runs $T = 25$\,ms (40\,Hz) with
+the same trajectory, controller code, load profile, and analysis
+pipeline. Under Eq.~\eqref{eq:budget} the adaptive budget target scales
+with $T$ automatically; the constant conditions, by construction, do not.
+
+\subsection{Trial protocol and metrics}
+
+Each trial receives a \emph{fresh} simulator stack (PX4, Gazebo, MAVROS
+restarted per trial) to guarantee independent, uncontaminated initial
+conditions; an automated runner enforces identical load-window timing
+across trials and a validity guard (circuit completion and steady-state
+attainment) with re-runs, so intermittent simulator faults cannot
+silently enter the dataset. The primary regime comprises $n = 13$ valid
+trials per condition; the secondary, $n = 8$.
+
+\emph{Metrics.} Deadline misses (count of cycles with $c_t > T$); RMS
+tracking error, both whole-trajectory and \emph{steady-state-only},
+where steady state begins algorithmically at the first run of 10
+consecutive cycles with position error below 0.5\,m (no hardcoded time
+cutoff); mean $N$; mean call time; state-to-command latency; and
+scheduler-stability metrics $\overline{|\Delta N|}$ and
+$\mathrm{Var}(N)$, with $\Delta N_t = N_t - N_{t-1}$, to detect
+oscillatory scheduling (``chatter''). Scheduler transient behavior is
+quantified by response latency (cycles from a per-sample cost spike to a
+$\geq$10\% budget reduction) and recovery time. Between-condition
+comparisons use Welch's $t$-test and the Mann--Whitney $U$ test on
+per-trial statistics.
+
+% =========================================================================
+\section{Results}
+\label{sec:results}
+
+\subsection{Primary regime: 20\,Hz (50\,ms deadline)}
+\label{sec:results:20hz}
+
+Table~\ref{tab:20hz} summarizes the primary comparison.
+
+\begin{table}[t]
+\caption{Primary regime (20\,Hz, 50\,ms deadline), mean $\pm$ std over
+$n{=}13$ trials per condition. Load window: cores 0--1, 6 threads,
+30\,s.}
+\label{tab:20hz}
+\centering
+\begin{tabular}{lccc}
+\toprule
+ & Adaptive & Constant-330 & Fixed-400 \\
+\midrule
+Deadline misses      & $0.15 \pm 0.38$  & $0.23 \pm 0.60$  & $18.0 \pm 4.1$ \\
+Miss rate            & $0.0\%$          & $0.0\%$          & $1.0\%$ \\
+SS-RMS error [m]     & $0.131 \pm 0.055$& $0.135 \pm 0.051$& $0.155 \pm 0.071$ \\
+Mean $N$             & $365.1$          & $330$            & $400$ \\
+Mean call [ms]       & $27.9$           & $27.1$           & $31.4$ \\
+In-window call [ms]  & $30.0$           & $32.8$           & $40.6$ \\
+$\overline{|\Delta N|}$ & $2.0$         & $0$              & $0$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\emph{Adaptive vs.\ Fixed-400.} The adaptive controller essentially
+eliminated deadline misses ($0.15 \pm 0.38$ vs.\ $18.0 \pm 4.1$ per
+trial; Welch $t = -15.5$, $p < 10^{-3}$; Mann--Whitney $U = 0$,
+$p < 10^{-3}$), while steady-state tracking error was statistically
+indistinguishable (Welch $p = 0.35$). During the load window the
+scheduler held call time at $30.0$\,ms --- exactly its target
+$\beta T$ --- by regulating $N$ to $\approx 300$, recovering to
+$N_{\max}$ within cycles of load release.
+\todo{Figure: 20\,Hz overlay time series (N, call time, error), three
+conditions.}
+
+\emph{Adaptive vs.\ Constant-330.} Under the tested condition, the
+predetermined constant budget performed equivalently to adaptation on
+both deadline misses ($p = 0.70$) and tracking error ($p = 0.83$): a
+well-chosen constant matches adaptation \emph{in the regime it is tuned
+for}. Sec.~\ref{sec:discussion} discusses why this is expected on our
+platform, and Sec.~\ref{sec:results:40hz} shows what the constant cannot
+do.
+
+\emph{Scheduler validation.} Across adaptive trials the scheduler
+responded to per-sample cost spikes within $1.4$ cycles on average and
+recovered within $1.6$ cycles; $\overline{|\Delta N|} \approx 2$
+indicates no oscillatory chatter --- the variance of $N$ is dominated by
+the intended load-window step, not cycle-to-cycle oscillation.
+\todo{Figure: $\Delta N$ distribution per condition.}
+
+\subsection{Secondary regime: 40\,Hz (25\,ms deadline)}
+\label{sec:results:40hz}
+
+The constant budget tuned at 20\,Hz does not transfer to the tighter
+timing regime --- it misses $\sim$30\% of all control cycles --- while
+the adaptive scheduler re-regulates to the new budget automatically.
+Table~\ref{tab:40hz} summarizes.
+
+\begin{table}[t]
+\caption{Secondary regime (40\,Hz, 25\,ms deadline), mean $\pm$ std over
+$n{=}8$ trials per condition. Identical trajectory, code, and load
+profile as Table~\ref{tab:20hz}.}
+\label{tab:40hz}
+\centering
+\begin{tabular}{lccc}
+\toprule
+ & Adaptive & Constant-330 & Fixed-400 \\
+\midrule
+Deadline misses  & $0.75 \pm 0.71$ & $1048.9 \pm 5.2$ & $876.5 \pm 7.6$ \\
+Miss rate        & $0.0\%$         & $30.5\%$         & $26.9\%$ \\
+SS-RMS error [m] & $0.136 \pm 0.127$ & $0.095 \pm 0.005$ & $0.130 \pm 0.045$ \\
+Mean $N$         & $220.5$         & $330$            & $400$ \\
+Mean call [ms]   & $15.0$          & $22.0$           & $26.3$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+With zero configuration change, the adaptive controller discovered a
+different budget for the different deadline --- $N \approx 252$ idle,
+$\approx 143$ under load --- pinning call time at $15.0$\,ms
+($= \beta T$) and maintaining essentially zero deadline misses
+($0.75 \pm 0.71$ per trial; vs.\ both constants: Welch $p < 10^{-3}$,
+Mann--Whitney $p < 10^{-3}$) at the full 40\,Hz rate. The constant
+conditions remained flyable --- Constant-330's steady-state tracking was
+in fact the best of the three --- but violated the real-time contract on
+roughly every third cycle, degrading the effective control rate to
+$\sim$38\,Hz; the cost of a miss in SITL at this margin is the broken
+timing contract and rate degradation, not tracking collapse
+(Sec.~\ref{sec:discussion}). Tests on steady-state RMS between adaptive
+and Fixed-400 disagree (Welch $p = 0.90$; Mann--Whitney $p = 0.01$, an
+$n{=}8$ rank artifact driven by one outlier trial); we report both and
+claim no consistent tracking difference.
+\todo{Figure: 40\,Hz overlay time series, three conditions.}
+
+\subsection{Equivalent-budget analysis: the Pareto curve predicts flight}
+\label{sec:results:budget}
+
+Interpolating the offline Pareto table (Sec.~\ref{sec:pareto}) at each
+adaptive trial's mean $N$ predicts the quality cost of adaptation. At
+20\,Hz (mean $N = 365.1$), the predicted quality gap versus $N = 400$ is
+$-0.0015$ --- 5\% of the table's own noise floor --- with a predicted
+per-call compute saving of 7.6\% whole-trial ($\approx$22\% during the
+load window). At 40\,Hz (mean $N = 220.5$), the predicted gap is
+$+0.0082$, still only $0.27\times$ the noise floor, with predicted
+savings of 41.8\% whole-trial ($\approx$63\% in-window). Both
+predictions are confirmed by the flight data: no statistically
+consistent steady-state tracking difference was observed in either
+regime. The offline characterization thus \emph{predicts} closed-loop
+outcomes: adaptation operates on the flat region of the quality--compute
+curve, which is precisely why halving the budget cost nothing
+measurable.
+
+% =========================================================================
+\section{Discussion}
+\label{sec:discussion}
+
+\emph{What adaptation buys.} The experimental story is: at 20\,Hz,
+adaptive $\approx$ tuned constant $>$ untuned constant; at 40\,Hz,
+adaptive adapts automatically while the previously tuned constant no
+longer satisfies the timing requirements. The value of the adaptive
+scheduler is robustness across operating regimes without offline
+retuning --- not outperforming the best hand-tuned constant within every
+fixed regime. Obtaining Constant-330 required an offline Pareto sweep
+plus a stress calibration; the scheduler found the corresponding budget
+online, in every regime it encountered, from nothing but its own
+measured execution times.
+
+\emph{Why the tuned constant is hard to beat in-regime.} Two measured
+platform properties compress the room between ``tuned constant
+suffices'' and ``flight fails'' at the 50\,ms deadline. First, the
+quality axis: beyond the Pareto elbow, quality differences between
+budgets in $[200, 400]$ are within noise --- so no in-regime experiment
+can separate budgets by tracking quality. Second, the deadline axis: the
+OS scheduler shields a periodic control task from fair-share CPU
+contention; across our calibration ladder, per-sample cost inflation
+saturated at $\sim$1.4$\times$ regardless of load size, which a 34\%
+budget headroom absorbs. We report this as a finding with its own
+practical implication: on multi-core companion computers running
+general-purpose schedulers, moderate fair-share contention degrades a
+periodic controller far less than naive utilization arithmetic suggests
+--- and conversely, the regimes that \emph{do} break a tuned constant are
+changes in the timing requirement itself, precisely where a ratio law
+like Eq.~\eqref{eq:budget} transfers and a constant cannot.
+
+\emph{On the cost of a miss.} In our SITL experiments, missing the
+deadline on a third of cycles degraded the effective control rate but
+not steady-state tracking --- the velocity-setpoint interface is
+forgiving at these margins. We deliberately do not claim that misses
+caused tracking failure; the claim is that the adaptive controller
+maintains the real-time contract that autopilot stacks assume, and that
+weakly-hard analyses~\cite{maggio2020control} show cannot be violated
+arbitrarily. Platforms with tighter inner loops, attitude-level
+interfaces, or hard real-time certification requirements pay a higher
+price per miss.
+
+\emph{Composability.} The scheduler touches MPPI only through the
+per-call sample count and measured duration. It is therefore orthogonal
+to, and composable with, distribution-adaptation
+methods~\cite{asmar2023mpopis,mohamed2022logmppi}, robustness
+layers~\cite{gandhi2021robust,yin2023shield}, and GPU
+parallelization~\cite{minarik2024mppi,enrico2025comparison} --- for a
+GPU implementation the per-sample cost model would need to account for
+batch effects, which we leave to future work.
+
+% =========================================================================
+\section{Threats to Validity}
+\label{sec:threats}
+
+\emph{Internal.} MPPI is stochastic and Gazebo physics is variable;
+run-to-run variance is addressed by repeated trials with a fresh
+simulator stack per trial, algorithmic (not hand-picked) steady-state
+segmentation, and rank-based tests alongside parametric ones. Scheduler
+timing is subject to OS jitter on the test machine, independent of the
+algorithm.
+
+\emph{External.} Results are software-in-the-loop on a single quadrotor
+model, task (square circuit and station-keeping), and desktop-class CPU;
+the prediction model is a kinematic single-integrator over velocity
+commands. The 40\,Hz regime represents tighter real-time constraints of
+the kind expected on lower-performance embedded processors, but we make
+no equivalence claim to any specific embedded platform without
+benchmarking it; hardware-in-the-loop validation is planned future work.
+
+\emph{Construct.} Busy-wait CPU load approximates contention; our own
+calibration shows the OS shields periodic tasks from it, and a
+memory-bandwidth variant of the load generator produced similar
+saturation on this compute-bound controller. The two-core pin emulates
+an embedded compute envelope rather than reproducing any specific
+device. The state-to-command latency we report upper-bounds middleware
+overhead, as it includes the asynchronous gap between pose arrival and
+the control timer.
+
+% =========================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+We treated MPPI's sample count as a runtime-adaptive control variable
+governed by a measured-execution-time budget law with a deadline
+objective and safety fallback, and validated it in staged, pre-registered
+SITL experiments against both the conventional fixed-maximum budget and a
+predetermined equivalent-budget constant, across two timing regimes. The
+adaptive controller essentially eliminated deadline misses under CPU
+contention where the conventional baseline missed consistently; matched a
+carefully tuned constant in the regime that constant was tuned for; and,
+unlike the constant, transferred to a 2$\times$ tighter deadline with
+zero retuning, re-discovering an appropriate budget online while the
+tuned constant missed $\sim$30\% of cycles. An offline quality--compute
+characterization predicted these closed-loop outcomes, because adaptation
+operates on the flat region of MPPI's quality--compute curve.
+
+Future work: a Pareto-informed scheduler that additionally enforces an
+empirical quality floor (the current law is deadline-only);
+hardware-in-the-loop and onboard-GPU deployment, where per-sample cost
+models must account for batch effects; and composition with
+distribution-adaptive MPPI variants.
+
+% =========================================================================
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

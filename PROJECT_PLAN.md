@@ -405,7 +405,30 @@ vs thin HITL confirmatory results) remain live — decide once Phase 2 is comple
 
 ---
 
-## Phase 5 — Writing — NOT STARTED (Abstract/Intro can start early)
+## Phase 5 — Writing — ✅ FULL FIRST DRAFT (2026-07-18): `paper/main.tex`
+
+Complete IEEEtran draft with real Phase-2 numbers throughout: Abstract (hedged, SITL scope
+explicit, robustness-without-retuning lead), Introduction (fixed-N-exists paragraph, 4
+contribution bullets incl. the honest negative result), Related Work (from
+related_work.md, now 9 MPPI citations after landscape additions), Method (MPPI
+formulation, Pareto characterization, scheduler ratio law Eq. 4 + safety fallback,
+implementation), Experimental Setup (conditions with predetermination rationale, calibrated
+stress condition + saturation ladder, pre-registered regimes, protocol/metrics/tests),
+Results (Tables I/II with locked wording: "essentially zero (0.75±0.71)", 40Hz opening
+sentence verbatim, Welch+MWU disagreement reported), Discussion (three-sentence arc,
+why-tuned-constant-is-hard-to-beat with both axes, cost-of-a-miss honesty, composability),
+Threats to Validity, Conclusion. TODOs marked inline: author block, 3 figures (Pareto,
+20Hz overlay, 40Hz overlay, ΔN distribution), bib page numbers.
+
+Remaining for submission:
+- [ ] Figures (publication-quality versions of the analysis plots; matplotlib → PDF).
+- [ ] Author block / acknowledgments.
+- [ ] Bib TODO-pages/TODO-verify flags (5 min against proceedings PDFs).
+- [ ] ECC page-limit pass + LaTeX compile check (no TeX on the dev machine — compile on
+  Overleaf or install texlive).
+- [ ] Advisor read-through (Phase 6).
+
+### Original Phase 5 checklist (superseded by the draft above)
 
 - [ ] Method section.
 - [ ] Related Work.
