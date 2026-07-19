@@ -110,11 +110,16 @@ clamping and smoothing --- and requires no model of the contention source.
   scheduling mechanism itself; the novelty lies in the actuator and its
   consequences.
   \item An offline characterization of MPPI's quality--compute trade-off
-  (a Pareto sweep over $N$) that both motivates the approach and, as we
-  show, \emph{predicts} its closed-loop behavior: adaptation operates on
-  the flat region of the quality--compute curve, which is precisely why
-  large budget reductions cost little tracking quality
-  (Sec.~\ref{sec:results}).
+  (a Pareto sweep over $N$) that is used twice: it \emph{predicts} the
+  closed-loop behavior of the deadline-only law --- adaptation operates
+  on the flat region of the curve, which is precisely why large budget
+  reductions cost little tracking quality --- and it is \emph{fed back
+  into the controller} as a derived quality floor
+  ($N_{\mathrm{floor}} = 150$, the smallest $N$ within one noise-floor
+  $\sigma$ of maximum quality), yielding a scheduler that respects a
+  timing constraint and a quality constraint simultaneously under an
+  explicit lexicographic priority, evaluated as a pre-registered
+  ablation (Sec.~\ref{sec:results:qf}).
   \item A pre-registered, staged experimental validation in
   software-in-the-loop (ROS~2 Humble, PX4, Gazebo Harmonic, MAVROS):
   repeated trials against \emph{two} baselines --- the conventional
@@ -335,6 +340,25 @@ what allows the same law to transfer across operating regimes
 $N_{\min} = 20$, $N_{\max} = 400$; the margin $1 - \beta$ absorbs
 measurement noise, scheduling jitter, and the non-MPPI portion of the
 cycle.
+
+\emph{Pareto-informed quality floor (ablation).} The base law
+\eqref{eq:budget} is deadline-only: nothing prevents it from allocating
+deep into the steep region of the quality--compute curve. As a
+pre-registered refinement, we close this loop by feeding the offline
+characterization (Sec.~\ref{sec:pareto}) back into the allocator. Let
+$N_{\mathrm{floor}}$ be the smallest swept $N$ whose predicted quality
+is within one noise-floor $\sigma$ of $N_{\max}$'s
+($N_{\mathrm{floor}} = 150$ here --- derived from the sweep, not
+chosen). The extended law applies a lexicographic priority:
+\emph{(i) deadline (hard)}, \emph{(ii) quality floor (soft)},
+\emph{(iii) margin (best effort)}: if \eqref{eq:budget} allocates below
+$N_{\mathrm{floor}}$ and the floor is still affordable within the
+\emph{full} period ($N_{\mathrm{floor}}\, \hat{\tau}_t \leq T$), the
+floor is allocated --- spending deadline \emph{margin}, not the
+deadline, to protect quality; if the floor itself is unaffordable, it
+yields to \eqref{eq:budget} and the consecutive-miss detector below is
+the escape hatch. Sec.~\ref{sec:results:qf} evaluates this variant
+(ADAPTIVE-QF) as an ablation arm.
 
 \emph{Safety fallback.} Independently of the smoothed estimate, the
 scheduler counts consecutive raw deadline overruns ($c_t > T$); at two
@@ -610,6 +634,62 @@ above the deadline during contention.}
 \label{fig:overlay40}
 \end{figure}
 
+\subsection{Quality-floor ablation (ADAPTIVE-QF)}
+\label{sec:results:qf}
+
+The Pareto-informed variant of Sec.~\ref{sec:scheduler} was evaluated
+as an additional arm ($n{=}8$ per regime) under interpretation rules
+pre-registered before any trial ran. Both regime-level predictions were
+confirmed. At 20\,Hz the floor never activated (the deadline law's
+in-window allocation, $N \approx 290$, never approaches 150) and
+ADAPTIVE-QF behaves as the base law. At 40\,Hz the floor \emph{binds}
+exactly as predicted: the base law's in-window allocation ($\approx
+143$) falls below the floor, and ADAPTIVE-QF pins $N = 150$ for 74\% of
+load-window cycles (in-window mean 151, call time 15.5\,ms), spending
+deadline margin to hold quality.
+
+Two measured effects characterize the resulting deadline/quality
+tension. First, the \emph{cost}: in-window deadline misses rise from
+essentially zero (base adaptive) to $4.1$ per trial --- the misses
+concentrate precisely where the floor is active, the mechanistic
+signature of margin being spent (total miss rates remain $\leq 0.4\%$
+of cycles, orders below any constant under regime mismatch; adaptive
+vs.\ ADAPTIVE-QF on misses: Holm-adjusted $p < 0.01$, Cliff's
+$\delta = -1.00$). A smaller elevation outside the load window, and at
+20\,Hz where the floor never activates, is attributable to between-batch
+(different-day) variability rather than the mechanism --- a limitation
+of the ablation-arm design, which we report rather than absorb into the
+mechanism claim. Second, the apparent \emph{benefit}: at 40\,Hz,
+ADAPTIVE-QF's steady-state RMS distribution is markedly tighter
+($0.097 \pm 0.005$\,m across 8 trials, no outliers) than base
+adaptive's ($0.136 \pm 0.127$\,m, whose mean is inflated by the single
+0.451\,m outlier of Sec.~\ref{sec:results:40hz}); central tendencies do
+not differ significantly ($p \approx 0.4$). With $n{=}8$ this variance
+tightening is suggestive rather than definitive, but it is consistent
+with the floor's purpose: preventing excursions into the steep region
+of the quality--compute curve.
+
+\emph{Conflict demonstration.} The true conflict case --- the deadline
+demanding less than the floor \emph{and} the floor being unaffordable
+--- is unreachable via fair-share contention on this platform, so we
+exercised it by fault injection at 40\,Hz with a stall window long
+enough for consecutive stalled cycles. A single half-second episode
+then exhibits every branch of the lexicographic law in sequence: the
+first stalled cycle (75\,ms against the 25\,ms deadline) registers a
+miss; on the second, the floor \emph{binds} ($N = 150$, still
+affordable on the partially-inflated cost estimate) and the second
+consecutive miss fires the fallback detector; on the third, the
+inflated estimate makes the floor unaffordable and it \emph{yields}
+($N = 51$, then $N_{\min} = 20$) --- correctly so, since no allocation
+fits a 60\,ms stall into a 25\,ms period, which is precisely the
+persistent-transient case the detector signal exists for; when the
+stall window ends, the first compliant cycle clears the detector, and
+recovery re-enters \emph{through the floor} ($20 \to 88 \to 150$ held,
+then upward) to the nominal operating point within 0.5\,s. Peak
+tracking disturbance across the episode was 0.12\,m. Trigger, binding,
+yielding, clearing, and floor-mediated recovery are thus each observed
+in flight, in their specified priority order.
+
 \subsection{Safety-fallback validation by fault injection}
 \label{sec:results:fault}
 
@@ -763,11 +843,15 @@ tuned constant missed $\sim$30\% of cycles. An offline quality--compute
 characterization predicted these closed-loop outcomes, because adaptation
 operates on the flat region of MPPI's quality--compute curve.
 
-Future work: a Pareto-informed scheduler that additionally enforces an
-empirical quality floor (the current law is deadline-only);
+Future work: generalizing the actuator claim to a second sampling-based
+optimizer class (e.g., CEM), which would elevate the contribution from a
+single-instance demonstration to a class-level statement about sampling
+budgets as feedback-scheduling actuators; a validated fallback
+\emph{substitution} policy (when to hand off, and when to return);
 hardware-in-the-loop and onboard-GPU deployment, where per-sample cost
-models must account for batch effects; and composition with
-distribution-adaptive MPPI variants.
+models must account for batch effects; closed-loop guarantees combining
+utilization bounds with MPPI's convergence properties; and composition
+with distribution-adaptive MPPI variants.
 
 % =========================================================================
 \bibliographystyle{IEEEtran}

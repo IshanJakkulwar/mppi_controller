@@ -6,9 +6,17 @@ contribution is application+rigor with explicitly no mechanism novelty; Sept 6 l
 slack for the Jetson HITL upgrade (the main strong-accept lever) and kills the CEM
 checkpoint; the venues are mutually exclusive and L-CSS decisions land after ECC's
 deadline, so ACC forfeits ECC 2027 entirely. If a journal-indexed publication is needed,
-the planned path is ECC now + an extended journal version (HITL + CEM results) to RA-L —
-fit-appropriate for experimental robotics — rather than a high-mismatch L-CSS bet.
-(ICRA excluded by user's schedule clashes.)
+the planned path is ECC now + an extended journal version (HITL + CEM + substitution-policy
+results, ≥30-50% new content, with clear notice of the conference precedent).
+**Extended-version target REVISED 2026-07-19: Control Engineering Practice (CEP) primary,
+not RA-L.** Per further external review (agreed): RA-L's novelty-forward, hardware-forward,
+6-page culture undervalues exactly this paper's strengths (statistical apparatus,
+pre-registration, honest null results) and its acceptance band (~25-30%) prices in
+flight-hardware expectations; CEP is the applied-control journal whose reviewers reward
+application+rigor, is IFAC-ecosystem like ECC, and fits the conference→journal pipeline
+norm (CEP first decision ~3-6 months — start drafting the extension in parallel with the
+ECC verdict, not after it). RA-L remains the alternative only if strong real-flight
+results materialize. (ICRA excluded by user's schedule clashes.)
 
 ---
 
