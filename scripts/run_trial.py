@@ -221,6 +221,85 @@ PX4_READY_MARKER = b"Startup script returned successfully"
 MAVROS_CONNECTED_MARKER = b"Got HEARTBEAT"
 
 
+# --------------------------------------------------------------------------
+# HITL mode (see HITL_PLAN.md). UNTESTED UNTIL HARDWARE IS AVAILABLE --
+# the first run MUST be supervised. Lifecycle per trial: launch Gazebo
+# Classic's HITL world (which owns the FC's USB/serial HIL link) + MAVROS on
+# the TELEM2 FTDI serial; run the trial; tear both down and reboot the FC
+# so every trial starts from a fresh autopilot state. PX4 SITL is never
+# launched in this mode -- the real flight controller replaces it.
+# --------------------------------------------------------------------------
+def hitl_bring_up(args, log_dir):
+    """Launch Gazebo Classic HITL world + MAVROS (serial). Returns
+    (gazebo_proc, mavros_proc)."""
+    for dev, what in [(args.hitl_sim_device, "FC USB (HIL link)"),
+                      (args.mavros_serial.split(":")[0], "MAVROS FTDI")]:
+        if not os.path.exists(dev):
+            raise RuntimeError(f"{what} device {dev} not present -- "
+                               "check cables/HITL_PLAN.md wiring")
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    gz_log = os.path.join(log_dir, f"{stamp}_gazebo.log")
+    mavros_log = os.path.join(log_dir, f"{stamp}_mavros.log")
+
+    print(f"  [HITL] Launching Gazebo Classic HITL world; log: {gz_log}")
+    setup = os.path.join(args.px4_dir,
+                         "Tools/simulation/gazebo-classic/setup_gazebo.bash")
+    build = os.path.join(args.px4_dir, "build/px4_sitl_default")
+    gazebo = popen_group(
+        ["bash", "-c",
+         f"source {setup} {args.px4_dir} {build} && "
+         f"exec gazebo --verbose {args.hitl_world}"],
+        prefix="gazebo", stdout_file=gz_log)
+    time.sleep(args.hitl_gazebo_warmup)
+    if gazebo.poll() is not None:
+        raise RuntimeError("Gazebo Classic exited during startup. Log "
+                           "tail:\n" + tail_bytes(gz_log))
+
+    print(f"  [HITL] Launching MAVROS on {args.mavros_serial}; "
+          f"log: {mavros_log}")
+    mavros = popen_group(
+        ["ros2", "launch", "mavros", "px4.launch",
+         f"fcu_url:=serial://{args.mavros_serial}"],
+        prefix="mavros", stdout_file=mavros_log)
+
+    deadline = time.time() + args.connect_timeout
+    while time.time() < deadline:
+        try:
+            with open(mavros_log, "rb") as f:
+                if MAVROS_CONNECTED_MARKER in f.read():
+                    print("  [HITL] MAVROS connected to the FC.")
+                    time.sleep(3)
+                    return gazebo, mavros
+        except OSError:
+            pass
+        if gazebo.poll() is not None:
+            raise RuntimeError("Gazebo died while waiting for MAVROS. Log "
+                               "tail:\n" + tail_bytes(gz_log))
+        if mavros.poll() is not None:
+            raise RuntimeError("MAVROS exited. Log tail:\n"
+                               + tail_bytes(mavros_log))
+        time.sleep(2)
+    raise RuntimeError(
+        f"MAVROS heartbeat not seen within {args.connect_timeout}s. "
+        "Log tail:\n" + tail_bytes(mavros_log))
+
+
+def hitl_tear_down(gazebo, mavros, args):
+    """Reboot the FC (fresh autopilot state per trial), then stop MAVROS
+    and Gazebo."""
+    print("  [HITL] Rebooting flight controller...")
+    subprocess.run(
+        ["ros2", "service", "call", "/mavros/cmd/command",
+         "mavros_msgs/srv/CommandLong", "{command: 246, param1: 1}"],
+        capture_output=True, text=True, timeout=15, env=ros_env())
+    time.sleep(3)
+    kill_group(mavros)
+    kill_group(gazebo)
+    # FC re-enumeration after reboot takes ~10-15s; wait so the next
+    # trial's device check doesn't race it.
+    time.sleep(args.hitl_reboot_wait)
+
+
 def tail_bytes(path, n=2000):
     try:
         with open(path, "rb") as f:
@@ -422,12 +501,16 @@ def run_one_trial_with_retries(args):
     for attempt in range(1, args.max_retries + 2):
         px4 = mavros = None
         try:
-            if args.restart_sim:
+            if args.hitl:
+                px4, mavros = hitl_bring_up(args, args.sim_log_dir)
+            elif args.restart_sim:
                 px4, mavros = bring_up_sim(args, args.sim_log_dir)
             run_node_trial(args, dest)
         except Exception as exc:  # noqa: BLE001 -- report and retry
             print(f"  Trial attempt {attempt} errored: {exc}", file=sys.stderr)
-            if args.restart_sim:
+            if args.hitl:
+                hitl_tear_down(px4, mavros, args)
+            elif args.restart_sim:
                 tear_down_sim(px4, mavros)
             if attempt <= args.max_retries:
                 print("  Retrying...")
@@ -436,7 +519,9 @@ def run_one_trial_with_retries(args):
 
         # Reached only on a successful run (no exception).
         ok, reason = validate_csv(dest)
-        if args.restart_sim:
+        if args.hitl:
+            hitl_tear_down(px4, mavros, args)
+        elif args.restart_sim:
             tear_down_sim(px4, mavros)
         else:
             reset_in_sim(args)
@@ -498,6 +583,23 @@ def main():
     parser.add_argument("--no-restart", dest="restart_sim",
                         action="store_false",
                         help="assume the sim is already running")
+
+    # HITL mode (HITL_PLAN.md; UNTESTED until hardware -- supervise the
+    # first run). Real flight controller replaces PX4 SITL; Gazebo Classic
+    # provides physics over the FC's USB serial; MAVROS talks to TELEM2.
+    parser.add_argument("--hitl", action="store_true", default=False)
+    parser.add_argument("--hitl-world",
+                        default=os.path.expanduser(
+                            "~/PX4-Autopilot/Tools/simulation/gazebo-classic/"
+                            "sitl_gazebo-classic/worlds/hitl_iris.world"))
+    parser.add_argument("--hitl-sim-device", default="/dev/ttyACM0",
+                        help="FC USB device carrying the HIL sensor stream")
+    parser.add_argument("--mavros-serial", default="/dev/ttyUSB0:921600",
+                        help="MAVROS FTDI serial device:baud (TELEM2)")
+    parser.add_argument("--hitl-gazebo-warmup", type=int, default=15)
+    parser.add_argument("--hitl-reboot-wait", type=int, default=20,
+                        help="seconds to wait for FC re-enumeration after "
+                             "the between-trial reboot")
 
     # load window -- defaults are the CALIBRATED stress condition (see
     # PROJECT_PLAN.md "Stress-condition calibration"): controller + load
@@ -564,11 +666,17 @@ def main():
         sys.exit(f"--px4-dir {args.px4_dir} not found. Pass --px4-dir or "
                  "use --no-restart with a hand-launched sim.")
 
-    mode = "restart-sim" if args.restart_sim else "no-restart"
+    mode = ("HITL" if args.hitl
+            else "restart-sim" if args.restart_sim else "no-restart")
     print(f"Reset strategy: {mode}. Condition: {args.condition}. "
           f"Trials: {args.trials}.")
 
-    if args.restart_sim:
+    if args.hitl:
+        print("  *** HITL MODE IS UNTESTED UNTIL HARDWARE IS AVAILABLE. ***\n"
+              "  *** SUPERVISE THE FIRST RUN (see HITL_PLAN.md). ***",
+              file=sys.stderr)
+        os.makedirs(args.sim_log_dir, exist_ok=True)
+    elif args.restart_sim:
         os.makedirs(args.sim_log_dir, exist_ok=True)
         preflight_check()
 
@@ -586,7 +694,7 @@ def main():
         print("\nInterrupted -- cleaning up sim processes before exit...",
               file=sys.stderr)
     finally:
-        if args.restart_sim:
+        if args.restart_sim and not args.hitl:
             # Never leave orphaned PX4/Gazebo/MAVROS behind (a previous
             # version did, and the stale instance broke the next run).
             hard_cleanup_sim()

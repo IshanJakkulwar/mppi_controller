@@ -169,6 +169,42 @@ def fig_fault():
     plt.close(fig)
 
 
+def fig_conflict():
+    """QF extended-stall episode at 40Hz: every lexicographic branch in
+    one half-second (bind -> detector -> yield -> N_min -> clear ->
+    recover through the floor)."""
+    f = sorted(glob.glob(
+        "results_fault_injection_40hz_yield/adaptiveqf/trial_*.csv"))[0]
+    tr = tracking(f)
+    t0 = float(tr[0]["epoch_sec"])
+    rows = [r for r in tr if 59.5 <= float(r["epoch_sec"]) - t0 <= 61.5]
+    t = [float(r["epoch_sec"]) - t0 for r in rows]
+    fig, axes = plt.subplots(2, 1, figsize=(COL_W, 2.8), sharex=True)
+    axes[0].plot(t, [float(r["mppi_call_ms"]) for r in rows],
+                 color="tab:purple", marker=".", markersize=2)
+    axes[0].axhline(25, color="red", linestyle="--", linewidth=0.8)
+    axes[0].annotate("25 ms deadline", xy=(61.45, 26), ha="right",
+                     va="bottom", fontsize=6, color="red")
+    axes[0].set_ylabel("Call time [ms]")
+    axes[1].plot(t, [int(r["N"]) for r in rows], color="tab:purple",
+                 marker=".", markersize=2)
+    axes[1].axhline(150, color="gray", linestyle=":", linewidth=0.8)
+    axes[1].annotate("quality floor (150)", xy=(59.55, 154), ha="left",
+                     va="bottom", fontsize=6, color="gray")
+    fb = [(float(r["epoch_sec"]) - t0, int(r["N"])) for r in rows
+          if r.get("fallback_active") == "1"]
+    if fb:
+        axes[1].plot([x for x, _ in fb], [y for _, y in fb], "r*",
+                     markersize=7, label="detector active")
+        axes[1].legend(loc="center right")
+    axes[1].set_ylabel("$N$")
+    axes[1].set_xlabel("Time since tracking start [s]")
+    for ax in axes:
+        ax.grid(True, alpha=0.3)
+    fig.savefig(os.path.join(OUT, "fig_conflict.pdf"))
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     fig_pareto()
@@ -176,4 +212,5 @@ if __name__ == "__main__":
     fig_overlay("results_40hz", 25, "fig_overlay_40hz.pdf")
     fig_dn_hist()
     fig_fault()
+    fig_conflict()
     print("Figures written to", os.path.abspath(OUT))

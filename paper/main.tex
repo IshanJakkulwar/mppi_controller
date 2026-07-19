@@ -685,10 +685,23 @@ fits a 60\,ms stall into a 25\,ms period, which is precisely the
 persistent-transient case the detector signal exists for; when the
 stall window ends, the first compliant cycle clears the detector, and
 recovery re-enters \emph{through the floor} ($20 \to 88 \to 150$ held,
-then upward) to the nominal operating point within 0.5\,s. Peak
-tracking disturbance across the episode was 0.12\,m. Trigger, binding,
-yielding, clearing, and floor-mediated recovery are thus each observed
-in flight, in their specified priority order.
+then upward) to the nominal operating point within 0.5\,s
+(Fig.~\ref{fig:conflict}). Peak tracking disturbance across the episode
+was 0.12\,m. Trigger, binding, yielding, clearing, and floor-mediated
+recovery are thus each observed in flight, in their specified priority
+order.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/fig_conflict}
+\caption{Conflict episode (ADAPTIVE-QF, 40\,Hz, extended injected
+stall): consecutive $\sim$75\,ms stalls against the 25\,ms deadline.
+The budget descends to the quality floor (150, dotted), the detector
+fires (stars), the floor yields when unaffordable ($N \to 51 \to
+N_{\min}$), and recovery re-enters through the floor to the nominal
+operating point within 0.5\,s.}
+\label{fig:conflict}
+\end{figure}
 
 \subsection{Safety-fallback validation by fault injection}
 \label{sec:results:fault}
