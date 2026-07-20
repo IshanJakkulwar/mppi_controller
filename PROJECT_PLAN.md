@@ -468,6 +468,43 @@ as the const-200 arm; publish whichever outcome occurs)
 - Sequencing per external review (agreed): HITL (Jetson+6C) runs in parallel weeks 2-4,
   not sequentially.
 
+## Analysis section added (2026-07-19) — addresses the "theory is weak" review
+
+External ECC-style review scored the paper Accept (~7.8-8.2/10) with the single biggest
+deduction being **absence of theoretical analysis** — explicitly noting that even simple
+propositions ("the scheduler has equilibrium N* = betaT/tau; for bounded execution-time
+variation the sample count satisfies ...") would count. Acted on: `paper/main.tex` gains
+a **Method/Analysis subsection** with four elementary propositions, each checked
+numerically against the committed data:
+
+1. **Deadbeat allocation.** Under the linear cost model, tau_hat is independent of
+   allocation history, so N_{t+1} is a static map of measured cost — no N_t term, hence
+   no allocation-driven oscillation, one-cycle attainment of N*, lag bounded by the
+   w-cycle estimator window. Predicts 1..w=3 cycle response; measured 1.0-1.4. **Also
+   explains why there is no convergence theorem to prove: there is no dynamic mode in N.**
+2. **Error transfer / chatter bound.** |N-N*|/N* = |tau-tau_hat|/tau_hat (relative error
+   transfers 1:1, scale-free); E|dN|/N ≈ sqrt(2)*sigma_tau/(tau*sqrt(w)). Measured 1.8%
+   (20Hz) / 4.1% (40Hz) — estimator noise, not chatter.
+3. **Deadline criterion + derivation of beta.** Deadline met iff
+   tau_{t+1}/tau_hat_t <= 1/beta. So beta is NOT arbitrary: 1/beta is the tolerable
+   per-sample cost-inflation factor; beta=0.6 tolerates 67%. **Verified against data:
+   measured median inflation 1.46x at 20Hz (< 1.667 -> predicts satisfaction, observed
+   0.15 misses/trial) and 1.85x at 40Hz (> 1.667 -> predicts occasional misses, observed
+   0.75/trial).** The criterion predicts both the near-elimination AND the cross-regime
+   ordering. Design rule: to survive inflation factor kappa, choose beta <= 1/kappa.
+4. **Bounded quality degradation under the floor.** While the floor binds, degradation is
+   <= the sweep noise floor by construction; when unaffordable the guarantee lapses
+   exactly as the floor yields — which is what the detector flags. **This ties the QF
+   ablation into the core contribution**, answering the same review's "QF feels like
+   another paper" concern (kept, not cut, but now theoretically motivated).
+
+Honest scoping kept in the paper: these characterize a *static allocation map*, not a
+closed-loop dynamical system; a stability result coupling allocation to vehicle dynamics
+needs a model of MPPI quality vs N beyond the empirical curve — named as future work.
+
+Also trimmed per the same review: novelty-disclaimer repetitions reduced (4 -> 3, kept in
+abstract / contributions / related-work where each does distinct work).
+
 ## Phase 3 — Literature & Framing — ✅ DRAFT COMPLETE (2026-07-18)
 
 - [x] Initial lit search, gap identified.

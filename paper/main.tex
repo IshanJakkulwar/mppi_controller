@@ -40,8 +40,12 @@ maintaining closed-loop control deadlines, with an explicit safety
 fallback mechanism. The mechanism is deliberately classical; the
 contribution is its application to a stochastic sampling-based optimizer
 --- whose computation is fungible in fine increments with gracefully
-degrading quality --- and a pre-registered, two-baseline, two-regime
-experimental evaluation of what adaptation does and does not buy.
+degrading quality --- together with an elementary analysis of the
+resulting allocation map and a pre-registered, two-baseline,
+two-regime experimental evaluation of what adaptation does and does not
+buy. The analysis yields a deadline criterion that predicts, from
+measured cost inflation alone, both the near-elimination of misses in
+one regime and their persistence in the other.
 In software-in-the-loop experiments (ROS~2, PX4, Gazebo) across repeated
 trials, the adaptive controller reduced deadline misses from
 $18.0 \pm 4.1$ to $0.15 \pm 0.38$ per trial relative to a conventional
@@ -106,9 +110,17 @@ clamping and smoothing --- and requires no model of the contention source.
   measured-execution-time budget law with a deadline-satisfaction
   objective and a domain-specific safety-fallback detector, the latter
   validated in flight by fault injection
-  (Sec.~\ref{sec:results:fault}). We claim no novelty for the
-  scheduling mechanism itself; the novelty lies in the actuator and its
-  consequences.
+  (Sec.~\ref{sec:results:fault}). The novelty lies in the actuator, not
+  the mechanism (Sec.~\ref{sec:related}).
+  \item An elementary analysis of the resulting allocation map
+  (Sec.~\ref{sec:analysis}) giving: a deadbeat, oscillation-free
+  allocation property; an error-transfer bound relating budget
+  variation to estimator noise; a deadline criterion
+  $\tau_{t+1}/\hat{\tau}_t \le 1/\beta$ that supplies both a design
+  rule for the margin and a quantitative account of \emph{why} misses
+  are near-eliminated in one regime and merely reduced in the other;
+  and a conditional bound on quality degradation under the floor. Each
+  prediction is checked against the measured data.
   \item An offline characterization of MPPI's quality--compute trade-off
   (a Pareto sweep over $N$) that is used twice: it \emph{predicts} the
   closed-loop behavior of the deadline-only law --- adaptation operates
@@ -380,6 +392,87 @@ indistinguishable from a real compute transient, forces consecutive
 deadline overruns and exercises the trigger/recovery path in flight
 (Sec.~\ref{sec:results:fault}).
 
+\subsection{Analysis}
+\label{sec:analysis}
+
+The budget law is simple enough to admit an elementary analysis, which
+we give because it explains --- rather than merely accompanies --- the
+experimental behavior reported in Sec.~\ref{sec:results}. Throughout we
+assume the linear cost model $c_t = N_t \tau_t$ (per-cycle cost
+proportional to sample count, with $\tau_t$ the per-sample cost) that
+motivates the estimator in the first place.
+
+\emph{Proposition 1 (deadbeat allocation; no oscillation in $N$).}
+Under the linear cost model, $\hat{\tau}_t$ in \eqref{eq:budget} is
+independent of the allocation history: $c_j / N_j = \tau_j$ regardless
+of $N_j$. Hence $N_{t+1}$ is a static function of measured per-sample
+cost alone --- the recursion contains no $N_t$ term. Consequently, if
+$\hat{\tau}$ is constant at $\tau$ with $\beta T/\tau \in [N_{\min},
+N_{\max}]$, the scheduler attains $N^\star = \lfloor \beta T/\tau
+\rfloor$ in a \emph{single} cycle and remains there; no
+allocation-driven oscillation is possible, and the only lag is the
+$w$-cycle window over which $\hat{\tau}$ absorbs a step change in cost.
+This is why we report response latency as an engineering metric rather
+than proving asymptotic convergence: there is no dynamic mode in $N$ to
+converge. It predicts a response latency between one and $w = 3$
+cycles, against the measured $1.0$--$1.4$ cycles
+(Sec.~\ref{sec:results:20hz},~\ref{sec:results:40hz}).
+
+\emph{Proposition 2 (error transfer and chatter bound).} From
+\eqref{eq:budget}, $|N_t - N^\star| / N^\star = |\tau -
+\hat{\tau}_t| / \hat{\tau}_t$: the \emph{relative} allocation error
+equals the relative estimator error, independent of the absolute scale
+of $N$. Since $\hat{\tau}_t$ averages $w$ samples, its relative
+dispersion is $\sigma_\tau / (\tau \sqrt{w})$, so the expected
+cycle-to-cycle variation obeys $\mathbb{E}|\Delta N| / N \approx
+\sqrt{2}\, \sigma_\tau / (\tau\sqrt{w})$ --- small whenever per-sample
+cost is stable, and reducible by enlarging $w$ at the price of slower
+response. Measured: $\mathbb{E}|\Delta N|/N = 1.8\%$ (20\,Hz) and
+$4.1\%$ (40\,Hz), consistent with estimator noise rather than
+scheduling chatter.
+
+\emph{Proposition 3 (deadline criterion; interpretation of $\beta$).}
+Cycle $t{+}1$ meets its deadline iff $N_{t+1}\tau_{t+1} \le T$, i.e.\
+(substituting \eqref{eq:budget}, away from the clamps) iff
+\begin{equation}
+\label{eq:criterion}
+\frac{\tau_{t+1}}{\hat{\tau}_t} \;\le\; \frac{1}{\beta}.
+\end{equation}
+The margin is therefore not an arbitrary tuning constant: $1/\beta$ is
+exactly the factor by which realized per-sample cost may exceed its
+estimate before a miss occurs, so $\beta = 0.6$ buys tolerance to a
+$67\%$ instantaneous cost inflation. This criterion predicts our
+headline results. Measured median per-sample cost inflation between
+idle and loaded operation was $1.46\times$ at 20\,Hz --- inside the
+$1.667$ bound, predicting deadline satisfaction, against
+$0.15 \pm 0.38$ misses per trial observed --- and $1.85\times$ at
+40\,Hz, outside the bound, predicting occasional misses, against
+$0.75 \pm 0.71$ observed. The criterion thus accounts both for the
+near-elimination of misses and for their ordering across regimes.
+Equivalently, it yields a design rule: to survive a contention regime
+that inflates per-sample cost by a factor $\kappa$, choose $\beta \le
+1/\kappa$.
+
+\emph{Proposition 4 (bounded quality degradation under the floor).}
+Let the offline characterization (Sec.~\ref{sec:pareto}) certify
+$|J(N) - J(N_{\max})| \le \sigma$ for all $N \ge N_{\mathrm{floor}}$,
+where $J$ is the quality metric and $\sigma$ the sweep's noise floor.
+Then whenever the quality floor is affordable ---
+$N_{\mathrm{floor}}\hat{\tau}_t \le T$, the binding case of
+Sec.~\ref{sec:scheduler} --- the allocated budget satisfies $N_{t+1}
+\ge N_{\mathrm{floor}}$ and hence incurs quality degradation bounded by
+$\sigma$ \emph{by construction}. The floor thus converts an empirical
+observation (curve flatness) into a conditional guarantee; when it is
+unaffordable the guarantee lapses precisely as the floor yields, which
+is the regime the consecutive-miss detector exists to flag.
+
+These statements are elementary, and deliberately so: they characterize
+a static allocation map rather than a dynamical system. They are not
+substitutes for a closed-loop stability result coupling allocation to
+vehicle dynamics, which would require a quality model of MPPI as a
+function of $N$ beyond the empirical curve used here, and which we
+identify as future work.
+
 \subsection{Implementation}
 
 The controller runs in a ROS~2 Humble node at a wall-timer period $T$
@@ -549,7 +642,9 @@ can do.
 
 \emph{Scheduler validation.} Across adaptive trials the scheduler
 responded to per-sample cost spikes within $1.4$ cycles on average and
-recovered within $1.6$ cycles; $\overline{|\Delta N|} \approx 2$
+recovered within $1.6$ cycles --- inside the one-to-$w$ cycle range
+predicted by Proposition 1; $\overline{|\Delta N|} \approx 2$
+(1.8\% of $N$, matching the estimator-noise scale of Proposition 2)
 indicates no oscillatory chatter --- the variance of $N$ is dominated by
 the intended load-window step, not cycle-to-cycle oscillation.
 Fig.~\ref{fig:dn} shows the $\Delta N$ distributions.
@@ -666,8 +761,10 @@ adaptive's ($0.136 \pm 0.127$\,m, whose mean is inflated by the single
 0.451\,m outlier of Sec.~\ref{sec:results:40hz}); central tendencies do
 not differ significantly ($p \approx 0.4$). With $n{=}8$ this variance
 tightening is suggestive rather than definitive, but it is consistent
-with the floor's purpose: preventing excursions into the steep region
-of the quality--compute curve.
+with the floor's purpose and with Proposition 4: while the floor binds,
+quality degradation is bounded by the sweep's noise floor by
+construction, whereas the deadline-only law carries no such bound and
+is free to excurse into the steep region of the curve.
 
 \emph{Conflict demonstration.} The true conflict case --- the deadline
 demanding less than the floor \emph{and} the floor being unaffordable
@@ -856,10 +953,14 @@ tuned constant missed $\sim$30\% of cycles. An offline quality--compute
 characterization predicted these closed-loop outcomes, because adaptation
 operates on the flat region of MPPI's quality--compute curve.
 
-Future work: generalizing the actuator claim to a second sampling-based
-optimizer class (e.g., CEM), which would elevate the contribution from a
-single-instance demonstration to a class-level statement about sampling
-budgets as feedback-scheduling actuators; a validated fallback
+Future work: a closed-loop guarantee coupling allocation to vehicle
+dynamics --- our analysis characterizes a static allocation map, and a
+stability result would require a model of MPPI quality as a function of
+$N$ beyond the empirical curve used here; generalizing the actuator
+claim to a second sampling-based optimizer class (e.g., CEM), which
+would elevate the contribution from a single-instance demonstration to a
+class-level statement about sampling budgets as feedback-scheduling
+actuators; a validated fallback
 \emph{substitution} policy (when to hand off, and when to return);
 hardware-in-the-loop and onboard-GPU deployment, where per-sample cost
 models must account for batch effects; closed-loop guarantees combining
