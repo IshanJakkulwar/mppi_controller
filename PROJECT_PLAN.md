@@ -535,7 +535,14 @@ abstract / contributions / related-work where each does distinct work).
 
 ---
 
-## Phase 4 — HITL via UCL — PLANNED IN FULL, NOT STARTED
+## Phase 4 — Hardware validation via UCL — PLANNED IN FULL, NOT STARTED
+**PRIORITY CORRECTED 2026-07-26 (user caught this):** this paper is about *companion
+computers*, so the **Jetson is the load-bearing hardware and the Pixhawk is optional**.
+The Pixhawk never runs our code — HITL only hardens the MAVLink-transport caveat. The
+Jetson fixes the desktop-vs-embedded criticism, which is the one every reviewer raised.
+**Do Jetson + PX4 SITL first (no Pixhawk, no wiring needed); treat it as sufficient.**
+Re-run the stress calibration ladder on the Jetson rather than assuming the
+2-core/6-thread numbers transfer.
 **Complete execution plan: `HITL_PLAN.md`** (written 2026-07-18, before starting) — board
 triage for the reportedly-dud Pixhawk 6C, wiring (3-wire FTDI on TELEM2 + USB HIL link),
 firmware/params, Gazebo Classic HITL (new Gazebo/Harmonic does NOT support HITL — key
