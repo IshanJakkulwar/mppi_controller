@@ -19,3 +19,9 @@ log/
 # Python (in case you add scripts later)
 __pycache__/
 *.pyc
+
+# Personal working notes — kept locally, not part of the published record
+HANDOFF.md
+LEARNING_PATH.md
+EXPERIMENT_LOG.md
+paper/related_work.md
