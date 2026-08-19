@@ -14,11 +14,13 @@ The ROS2 node never performs control math; it only subscribes, publishes, and ca
 
 ## Setup
 
-New machine, or lost this one? **[SETUP.md](SETUP.md)** lists every tool this project
-depends on outside git (ROS2, MAVROS, Gazebo Harmonic + Classic, PX4-Autopilot, Eigen,
-Python packages) with exact install commands and the versions this project was
-validated against. **[HANDOFF.md](HANDOFF.md)** has the full project context — decisions,
-state, remaining work.
+New machine? **[SETUP.md](SETUP.md)** lists every external dependency (ROS 2, MAVROS,
+Gazebo, PX4-Autopilot, Eigen, Python packages) with install commands and the versions
+this project was validated against.
+
+Experimental design decisions were fixed in version control before the corresponding
+data were collected — see **[PREREGISTRATION.md](PREREGISTRATION.md)** for the record
+and the commits that establish it.
 
 ## Build
 
