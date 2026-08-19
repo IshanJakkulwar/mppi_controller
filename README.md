@@ -12,15 +12,16 @@ Gazebo -> PX4 -> MAVROS -> offboard_node -> Controller -> MAVROS setpoint
 
 The ROS2 node never performs control math; it only subscribes, publishes, and calls controller classes. All optimization lives in `include/mppi_controller/controllers/`.
 
-## Setup
-
-New machine? **[SETUP.md](SETUP.md)** lists every external dependency (ROS 2, MAVROS,
-Gazebo, PX4-Autopilot, Eigen, Python packages) with install commands and the versions
-this project was validated against.
+## Pre-registration
 
 Experimental design decisions were fixed in version control before the corresponding
 data were collected — see **[PREREGISTRATION.md](PREREGISTRATION.md)** for the record
 and the commits that establish it.
+
+## Requirements
+
+ROS 2 Humble, MAVROS, PX4-Autopilot (validated against v1.15.4), Gazebo Harmonic,
+Eigen 3.4, and Python 3 with scipy/numpy/matplotlib for the analysis scripts.
 
 ## Build
 
