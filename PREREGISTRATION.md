@@ -114,8 +114,14 @@ This is a self-administered pre-registration in version control, not registratio
 third-party registry. It establishes that a decision existed in an immutable, timestamped
 form before the corresponding data, which is weaker than an external registry — a
 repository owner can rewrite history, and the record's value rests on the commits not
-having been rewritten. The history of this repository has not been rewritten; commit
-identifiers cited above can be checked against any clone made before publication.
+having been rewritten in ways that alter the recorded decisions or their timing.
+
+This history was rewritten once, after all data collection and analysis were complete,
+to remove personal working documents that were never part of the scientific record. That
+rewrite changed commit identifiers; it preserved every author and committer timestamp,
+the full text of the recorded decisions, and the ordering between each decision and its
+data. The identifiers cited above are those of the current history. A copy of the
+pre-rewrite history is retained separately.
 
 The pre-registrations cover experimental design decisions: baseline values, the stress
 condition, added arms, and their interpretation rules. They do not cover the hypotheses
