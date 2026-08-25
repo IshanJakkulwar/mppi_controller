@@ -53,7 +53,7 @@ adaptive-versus-constant comparison that was subsequently reported as null.
 
 | | Commit / event | Timestamp |
 |---|---|---|
-| Condition locked | `0f5e582` | 2026-07-17 21:15:59 BST |
+| Condition locked | `93988f3` | 2026-07-17 21:15:59 BST |
 | Earliest Phase 2 flight | first CSV row in `results/` | 2026-07-17 21:19:52 BST |
 
 **Status:** all reported Phase 2 flights postdate the lock.
@@ -70,10 +70,10 @@ were committed to in advance; the former occurred.
 
 | | Commit / event | Timestamp |
 |---|---|---|
-| Interpretation rules fixed | `a5a4867` | 2026-07-18 22:28:32 BST |
+| Interpretation rules fixed | `6271fe7` | 2026-07-18 22:28:32 BST |
 | Earliest 20 Hz flight | first CSV row, `results/const200/` | 2026-07-18 22:24:50 BST |
 | Earliest 40 Hz flight | first CSV row, `results_40hz/const200/` | 2026-07-18 22:39:32 BST |
-| Data committed | `6c4bdc6` | 2026-07-18 22:59:34 BST |
+| Data committed | `8b166de` | 2026-07-18 22:59:34 BST |
 
 **Status — partial, disclosed.** The 40 Hz arm is clean: all flights postdate the
 commit. For the 20 Hz arm, three of eight trials (01–03) began between three minutes
@@ -98,10 +98,10 @@ chosen to fit a result.
 
 | | Commit / event | Timestamp |
 |---|---|---|
-| Predictions fixed | `b72dbfd` | 2026-07-18 23:47:33 BST |
+| Predictions fixed | `ae45409` | 2026-07-18 23:47:33 BST |
 | Earliest 20 Hz flight | first CSV row, `results/adaptiveqf/` | 2026-07-18 23:50:49 BST |
 | Earliest 40 Hz flight | first CSV row, `results_40hz/adaptiveqf/` | 2026-07-19 00:05:35 BST |
-| Data and outcome committed | `39a8fb1` | 2026-07-19 15:13:32 BST |
+| Data and outcome committed | `0401105` | 2026-07-19 15:13:32 BST |
 
 **Status:** clean. All flights in both regimes postdate the commit fixing the
 predictions. Both regime-level predictions were confirmed.
